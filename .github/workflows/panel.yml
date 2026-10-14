@@ -1,0 +1,16 @@
+name: Panel picture (macOS)
+on:
+  workflow_dispatch:
+jobs:
+  panel:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCOPY_PLUGIN_AFTER_BUILD=OFF
+      - name: Draw the panel and print it as text (base64) into the log
+        run: |
+          cmake --build build --target ripples_snapshot -j4
+          ./build/ripples_snapshot_artefacts/Release/ripples_snapshot panel.png
+          ls -l panel.png
+          echo "PNG-BEGIN"; base64 -i panel.png | tr -d '\n'; echo; echo "PNG-END"
