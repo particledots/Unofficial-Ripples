@@ -13,4 +13,7 @@ jobs:
           cmake --build build --target ripples_snapshot -j4
           ./build/ripples_snapshot_artefacts/Release/ripples_snapshot panel.png
           ls -l panel.png
-          echo "PNG-BEGIN"; base64 -i panel.png | tr -d '\n'; echo; echo "PNG-END"
+          base64 -i panel.png | tr -d '\n' > panel.b64
+          wc -c panel.b64
+          split -b 20000 -a 2 panel.b64 chunk_
+          for f in chunk_*; do echo "::notice title=png-$f::$(cat $f)"; done
