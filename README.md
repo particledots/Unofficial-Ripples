@@ -39,19 +39,26 @@ endorsed by the module's makers.
 | Frequency | Pole frequency of each of the four stages (5 Hz – 21.9 kHz, log) |
 | Resonance | 0–1; self-oscillation begins at 0.75 and the pitch is the Frequency setting |
 | Output | LP2, LP4, BP2, LP4 through VCA (a switch fades over 10 ms) |
+| FM amount | 0–1, how far the **sidechain** signal moves the frequency (see below) |
 | VCA level | 0–1, only for the "LP4 through VCA" output |
 | Input gain, Output gain | ±24 dB |
 
-The interface is JUCE's plain automatic one (sliders and a menu), so every control can be automated in Logic.
+The panel is a simple custom one (knobs, four output buttons). Every control is an ordinary parameter, so all of them can be automated in Logic.
+
+## FM input
+
+The original has no FM jack. It has a CV input with a level knob that moves the frequency, which is what FM does, so this plug-in has one: route any track to the plug-in's **sidechain** input (in Logic: the Side Chain menu at the top of the plug-in window) and raise **FM AMOUNT**.
+The signal moves the frequency of all four stages exponentially (octaves, like the hardware's 1 V/oct summing); FM AMOUNT 100% = 1 octave per volt, with full scale taken as 5 V, so a full-scale signal at 100% swings five octaves each way. Positive = higher. A stereo sidechain is averaged to mono.
+The FM signal is delayed to line up with the audio it belongs to. **Guesses:** the scale (1 V/oct at 5 V full scale) and the plain linear sum in octaves; the hardware's CV attenuator and its exponential converter were not modelled in detail. Not yet tried in Logic.
 
 ## Tests
 
-`tests/ripples_test.cpp` (47 checks, no JUCE): oversampler gain and delay; gain and polarity of each output; BP2 has no DC; slopes of 12 and 24 dB per octave; −6 dB / −12 dB at the stage
+`tests/ripples_test.cpp` (53 checks, no JUCE): oversampler gain and delay; gain and polarity of each output; BP2 has no DC; slopes of 12 and 24 dB per octave; −6 dB / −12 dB at the stage
 frequency for LP2 / LP4; the same answers at 44.1, 48 and 96 kHz; resonance (dies away below the threshold, keeps going above it, pitch follows Frequency within 5%, peak grows with Q, the output stays bounded);
-the VCA output scales with its control and blocks DC; no crash, NaN or runaway with random extreme settings at 44.1 / 96 / 192 kHz; rail clipping; output switching without a click; silence and reset.
+the VCA output scales with its control and blocks DC; no crash, NaN or runaway with random extreme settings at 44.1 / 96 / 192 kHz; rail clipping; output switching without a click; FM (+1 octave equals doubling the frequency, −1 halves it, an FM step lines up with the audio, audio-rate FM stays bounded); silence and reset.
 
 **Deliberate breaks** (a change made to a copy, to check the tests notice): wrong feedback sign, wrong stage resistor, wrong LP2 ratio, BP2 missing LP2, no input path through the OTA, no frequency warping, VCA output not AC-coupled,
-no rail clipping, wrong Q scale, wrong state update, no fade on output change. Each is caught by at least one check.
+no rail clipping, wrong Q scale, wrong state update, no fade on output change, FM too weak, FM upside down, FM not delayed to match the audio. Each is caught by at least one check.
 
 CPU on the Linux test machine: about 6% of one core for a stereo instance at 48 kHz (not measured on a Mac).
 

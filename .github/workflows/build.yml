@@ -23,6 +23,21 @@ jobs:
           cmake --build build --target ripples_test -j4
           ./build/ripples_test
 
+      - name: Picture of the panel (does not stop the build if it fails)
+        continue-on-error: true
+        run: |
+          cmake --build build --target ripples_snapshot -j4
+          ./build/ripples_snapshot_artefacts/Release/ripples_snapshot panel.png
+          ls -l panel.png
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: panel-picture
+          path: panel.png
+          if-no-files-found: ignore
+
       - name: Build AU + VST3
         run: cmake --build build --target UnofficialRipples_AU UnofficialRipples_VST3 -j4
 
@@ -51,6 +66,7 @@ jobs:
              (it is a normal audio effect; put it on an audio or instrument track).
           5. Controls: FREQUENCY (each of the four stages' pole frequency), RESONANCE (it self-oscillates above about 75%),
              OUTPUT (LP2, LP4, BP2, or LP4 through the VCA), VCA LEVEL (only used by that last output), INPUT GAIN, OUTPUT GAIN.
+             FM: send a track to this plug-in's sidechain input and turn up FM AMOUNT (the sidechain signal moves the frequency).
              The plug-in reports about 31 samples of delay to Logic (its oversampling filters).
           TXT
           ditto -c -k --keepParent dist Unofficial-Ripples-macOS.zip

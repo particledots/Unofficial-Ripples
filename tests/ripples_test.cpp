@@ -215,6 +215,56 @@ static void testOutputSwitch() {
     CHECK(maxStep < 4.0 * maxToneStep + 0.01, "a jump of %g when switching (the tone's own biggest step is %g)", maxStep, maxToneStep);
 }
 
+static void testFm() {
+    printf("-- FM (frequency modulation in octaves)\n");
+    const double fs = 48000.0;
+    // a constant +1 octave must give the same sound as doubling the frequency setting
+    for (double f : { 700.0, 2000.0 }) {
+        Voice a, b; a.reset(); b.reset(); double d = 0, e = 0;
+        for (int i = 0; i < 48000; ++i) {
+            float x = (float)(0.2 * std::sin(2 * kPi * f * i / fs));
+            float ya = a.process(x, LP4, 1000.0, 0.4, 0, 1, 1, fs, 1.0);
+            float yb = b.process(x, LP4, 2000.0, 0.4, 0, 1, 1, fs, 0.0);
+            if (i > 24000) { d += (ya - yb) * (ya - yb); e += yb * yb; }
+        }
+        CHECK(std::sqrt(d / e) < 0.01, "+1 octave is not the same as doubling the frequency (difference %g)", std::sqrt(d / e));
+    }
+    // -1 octave: half
+    {
+        Voice a, b; a.reset(); b.reset(); double d = 0, e = 0;
+        for (int i = 0; i < 48000; ++i) { float x = (float)(0.2 * std::sin(2 * kPi * 900.0 * i / fs));
+            float ya = a.process(x, LP2, 4000.0, 0.2, 0, 1, 1, fs, -1.0), yb = b.process(x, LP2, 2000.0, 0.2, 0, 1, 1, fs, 0.0);
+            if (i > 24000) { d += (ya - yb) * (ya - yb); e += yb * yb; } }
+        CHECK(std::sqrt(d / e) < 0.01, "-1 octave is not the same as halving it (difference %g)", std::sqrt(d / e));
+    }
+    // timing: an FM step at input sample N must act on the audio that arrived at N (the audio is delayed by the oversampler, so the FM must be too)
+    {
+        const int N = 12000, lat = Oversampler2x::latencySamples();
+        Voice a, b; a.reset(); b.reset(); double d = 0, e = 0;
+        for (int i = 0; i < 24000; ++i) {
+            float x = (float)(0.2 * std::sin(2 * kPi * 1500.0 * i / fs));
+            float ya = a.process(x, LP4, 500.0, 0.3, 0, 1, 1, fs, i >= N ? 3.0 : 0.0);
+            float yb = b.process(x, LP4, i >= N + lat ? 4000.0 : 500.0, 0.3, 0, 1, 1, fs, 0.0);
+            if (i > N - 50 && i < N + lat + 300) { d += (ya - yb) * (ya - yb); e += yb * yb; }
+        }
+        CHECK(std::sqrt(d / e) < 0.02, "FM step is not lined up with the audio (difference %g)", std::sqrt(d / e));
+    }
+    // audio-rate FM: stays finite, bounded, and makes new frequencies (side-bands) that were not in the input
+    {
+        Voice v; v.reset(); double pk = 0; bool bad = false; std::vector<float> y(48000);
+        for (int i = 0; i < 48000; ++i) {
+            float x = (float)(0.3 * std::sin(2 * kPi * 440.0 * i / fs));
+            double m = 2.0 * std::sin(2 * kPi * 330.0 * i / fs);
+            y[i] = v.process(x, LP4, 3000.0, 0.5, 0, 1, 1, fs, m);
+            if (!std::isfinite(y[i])) bad = true;
+            pk = std::max(pk, (double) std::fabs(y[i]));
+        }
+        auto gz = [&](double f) { double sr = 0, si = 0; for (int i = 24000; i < 48000; ++i) { sr += y[i] * std::sin(2 * kPi * f * i / fs); si += y[i] * std::cos(2 * kPi * f * i / fs); } return std::hypot(sr, si) / 24000.0; };
+        CHECK(!bad && pk <= 1.5 * kRail / kVoltsPerFS, "audio-rate FM gave bad output (peak %g)", pk);
+        CHECK(gz(440.0) > 0.01, "audio-rate FM: the 440 Hz tone is gone");
+    }
+}
+
 static void testSilenceAndReset() {
     printf("-- silence in, silence out; reset clears the state\n");
     Voice v; v.reset();
@@ -227,7 +277,7 @@ static void testSilenceAndReset() {
 }
 
 int main() {
-    testOversampler(); testGains(); testCutoffAndSlope(); testHighCutoffAndOverload(); testSampleRates(); testResonance(); testVca(); testStability(); testOutputSwitch(); testSilenceAndReset();
+    testOversampler(); testGains(); testCutoffAndSlope(); testHighCutoffAndOverload(); testSampleRates(); testResonance(); testVca(); testStability(); testOutputSwitch(); testFm(); testSilenceAndReset();
     printf("\n%d checks, %d failed\n", checks, fails);
     return fails ? 1 : 0;
 }

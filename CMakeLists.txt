@@ -32,7 +32,7 @@ juce_add_plugin(UnofficialRipples
   AU_MAIN_TYPE kAudioUnitType_Effect
   COPY_PLUGIN_AFTER_BUILD TRUE)
 
-target_sources(UnofficialRipples PRIVATE src/PluginProcessor.cpp)
+target_sources(UnofficialRipples PRIVATE src/PluginProcessor.cpp src/PluginEditor.cpp)
 target_include_directories(UnofficialRipples PRIVATE src)
 target_compile_definitions(UnofficialRipples PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(UnofficialRipples PRIVATE
@@ -43,3 +43,11 @@ target_link_libraries(UnofficialRipples PRIVATE
 # --- Test of the filter model (no JUCE):  cmake --build build --target ripples_test && build/ripples_test ---
 add_executable(ripples_test EXCLUDE_FROM_ALL tests/ripples_test.cpp)
 target_include_directories(ripples_test PRIVATE src)
+
+# --- Picture of the panel (used by the build):  cmake --build build --target ripples_snapshot ---
+juce_add_console_app(ripples_snapshot PRODUCT_NAME "ripples_snapshot")
+set_target_properties(ripples_snapshot PROPERTIES EXCLUDE_FROM_ALL TRUE)
+target_sources(ripples_snapshot PRIVATE tools/snapshot.cpp src/PluginProcessor.cpp src/PluginEditor.cpp)
+target_include_directories(ripples_snapshot PRIVATE src)
+target_compile_definitions(ripples_snapshot PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=0)
+target_link_libraries(ripples_snapshot PRIVATE juce::juce_audio_utils juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)

@@ -135,31 +135,47 @@ private:
 
 // What the plug-in uses: one channel at 2x oversampling, with the plug-in's units (Hz, 0..1 knobs, dB) and 1.0 = kVoltsPerFS volts.
 // Changing the output fades between the old and the new one over about 10 ms (so the switch does not click).
+// FM: fmOct is a frequency offset in octaves (positive = higher), applied to all four stages (exponential, like the hardware's V/oct summing).
+// It is delayed by the oversampler's latency so that it lines up with the audio it belongs to.
 class Voice {
 public:
-    void reset() { os.reset(); ch0.reset(); curOut = prevOut = LP4; xf = 1.0; }
+    static constexpr int kFmDelay = 31;     // = Oversampler2x::latencySamples()
+    static_assert(kFmDelay == Oversampler2x::latencySamples(), "FM delay must equal the oversampler latency");
+    void reset() { os.reset(); ch0.reset(); curOut = prevOut = LP4; xf = 1.0; for (double& d : fmBuf) d = 0.0; fmPos = 0; fmPrev = 0.0; }
     // stageHz: pole frequency of each stage. q, vca: 0..1. inGainLin / outGainLin: linear gains.
-    float process(float in, Output out, double stageHz, double q, double vca, double inGainLin, double outGainLin, double hostFs) {
+    float process(float in, Output out, double stageHz, double q, double vca, double inGainLin, double outGainLin, double hostFs, double fmOct = 0.0) {
         if (out != curOut) { prevOut = curOut; curOut = out; xf = 0.0; }
+        // FM, delayed to match the audio path
+        fmBuf[fmPos] = std::max(-8.0, std::min(8.0, fmOct));
+        const int readPos = (fmPos - kFmDelay + kFmBufLen) % kFmBufLen;
+        const double fmCur = fmBuf[readPos];
+        fmPos = (fmPos + 1) % kFmBufLen;
+        const double fmA = 0.5 * (fmPrev + fmCur), fmB = fmCur;
+        fmPrev = fmCur;
         double a, b;
         os.up(in * inGainLin * kVoltsPerFS, a, b);
         const double fs2 = 2.0 * hostFs;
-        const double hz = std::max(1.0, std::min(stageHz, kStageMaxHz));
         const double iq = std::max(0.0, std::min(1.0, q)) * kIQmax;
         const double iv = std::max(0.0, std::min(1.0, vca)) * kIVcaMax;
+        const double hzA = std::max(1.0, std::min(stageHz * std::exp2(fmA), kStageMaxHz));
+        const double hzB = std::max(1.0, std::min(stageHz * std::exp2(fmB), kStageMaxHz));
         double oa[4], ob[4];
-        ch0.processAll(a, hz, iq, iv, fs2, oa);
-        ch0.processAll(b, hz, iq, iv, fs2, ob);
+        ch0.processAll(a, hzA, iq, iv, fs2, oa);
+        ch0.processAll(b, hzB, iq, iv, fs2, ob);
         double ya, yb;
         if (xf >= 1.0) { ya = oa[curOut]; yb = ob[curOut]; }
         else { ya = xf * oa[curOut] + (1.0 - xf) * oa[prevOut]; yb = xf * ob[curOut] + (1.0 - xf) * ob[prevOut]; xf = std::min(1.0, xf + 1.0 / (0.010 * hostFs)); }
         return (float) (os.down(ya, yb) * outGainLin / kVoltsPerFS);
     }
 private:
+    static constexpr int kFmBufLen = 64;
     Oversampler2x os;
     Channel ch0;
     Output curOut = LP4, prevOut = LP4;
     double xf = 1.0;
+    double fmBuf[kFmBufLen] = {};
+    int fmPos = 0;
+    double fmPrev = 0.0;
 };
 
 } // namespace ripples
