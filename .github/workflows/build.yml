@@ -1,0 +1,61 @@
+name: Build plugin (macOS)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:      # adds a "Run workflow" button in the Actions tab
+
+jobs:
+  build-macos:
+    runs-on: macos-14     # Apple silicon runner
+    defaults:
+      run:
+        shell: bash .github/wrap.sh {0}   # same as plain bash, plus a readable error annotation when a step fails
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCOPY_PLUGIN_AFTER_BUILD=OFF -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+
+      - name: Tests of the filter model (gains, slopes, resonance, self-oscillation, sample rates, stability, outputs)
+        run: |
+          cmake --build build --target ripples_test -j4
+          ./build/ripples_test
+
+      - name: Build AU + VST3
+        run: cmake --build build --target UnofficialRipples_AU UnofficialRipples_VST3 -j4
+
+      - name: Ad-hoc sign (lets Apple silicon load an unsigned build)
+        run: |
+          for b in build/UnofficialRipples_artefacts/Release/AU/*.component build/UnofficialRipples_artefacts/Release/VST3/*.vst3; do
+            codesign --force --deep -s - "$b"
+          done
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp -R build/UnofficialRipples_artefacts/Release/AU/*.component dist/
+          cp -R build/UnofficialRipples_artefacts/Release/VST3/*.vst3 dist/
+          cp README.md dist/README.md
+          lipo -archs dist/*.component/Contents/MacOS/*
+          # Show the minimum macOS version baked into each slice (should say 11.0):
+          for a in arm64 x86_64; do echo "== $a"; lipo -thin $a dist/*.component/Contents/MacOS/* -output /tmp/slice_$a; otool -l /tmp/slice_$a | grep -A4 -E "LC_BUILD_VERSION|LC_VERSION_MIN" | grep -E "minos|version"; done
+          cat > dist/INSTALL.txt <<'TXT'
+          1. Unzip.
+          2. Open Terminal and run:   xattr -dr com.apple.quarantine ~/Downloads/Unofficial-Ripples-macOS/*
+             (adjust the path if you unzipped elsewhere; this clears the "downloaded from internet" block)
+          3. Copy "Unofficial Ripples.component" to  ~/Library/Audio/Plug-Ins/Components/
+             Copy "Unofficial Ripples.vst3"       to  ~/Library/Audio/Plug-Ins/VST3/
+          4. In Logic: Settings > Plug-in Manager > rescan. Look for "particledots: Unofficial Ripples"
+             (it is a normal audio effect; put it on an audio or instrument track).
+          5. Controls: FREQUENCY (each of the four stages' pole frequency), RESONANCE (it self-oscillates above about 75%),
+             OUTPUT (LP2, LP4, BP2, or LP4 through the VCA), VCA LEVEL (only used by that last output), INPUT GAIN, OUTPUT GAIN.
+             The plug-in reports about 31 samples of delay to Logic (its oversampling filters).
+          TXT
+          ditto -c -k --keepParent dist Unofficial-Ripples-macOS.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Unofficial-Ripples-macOS
+          path: Unofficial-Ripples-macOS.zip
