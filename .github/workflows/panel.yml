@@ -13,7 +13,7 @@ jobs:
           cmake --build build --target ripples_snapshot -j4
           ./build/ripples_snapshot_artefacts/Release/ripples_snapshot panel.png
           ls -l panel.png
-          sips -s format jpeg -s formatOptions 60 panel.png --out panel.jpg
+          sips -Z 640 -s format jpeg -s formatOptions 45 panel.png --out panel.jpg
           ls -l panel.png panel.jpg
           base64 -i panel.jpg | tr -d '\n' > panel.b64
           wc -c panel.b64
