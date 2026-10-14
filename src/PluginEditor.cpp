@@ -86,7 +86,7 @@ RipplesEditor::RipplesEditor(UnofficialRipplesProcessor& p) : AudioProcessorEdit
     hint.setFont(juce::FontOptions(11.0f)); hint.setColour(juce::Label::textColourId, RipplesLook::dim());
     hint.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(hint);
-    setSize(600, 380);
+    setSize(600, 392);
 }
 
 RipplesEditor::~RipplesEditor() { setLookAndFeel(nullptr); }
@@ -101,7 +101,7 @@ void RipplesEditor::paint(juce::Graphics& g) {
     g.setColour(RipplesLook::dim()); g.setFont(juce::FontOptions(11.0f, juce::Font::bold));
     g.drawText("OUTPUT", 28, 84, 80, 14, juce::Justification::centredLeft);
     g.setColour(RipplesLook::panel().brighter(0.2f));
-    g.drawHorizontalLine(262, 28.0f, (float) getWidth() - 28.0f);
+    g.drawHorizontalLine(266, 28.0f, (float) getWidth() - 28.0f);
 }
 
 void RipplesEditor::resized() {
@@ -112,10 +112,10 @@ void RipplesEditor::resized() {
         for (int i = 0; i < 4; ++i) outButtons[i].setBounds(28 + i * (bw + gap), y, bw, 28);
     }
     // main knobs
-    const int kw = (getWidth() - 56) / 4, kh = 120, y0 = 140;
+    const int kw = (getWidth() - 56) / 4, y0 = 134;
     Knob* big[4] = { &freq, &reso, &fm, &vca };
     for (int i = 0; i < 4; ++i) {
-        auto cell = juce::Rectangle<int>(28 + i * kw, y0, kw, kh + 22 + 18);
+        auto cell = juce::Rectangle<int>(28 + i * kw, y0, kw, 126);
         big[i]->label.setBounds(cell.removeFromTop(18));
         big[i]->slider.setBounds(cell);
     }
@@ -123,11 +123,11 @@ void RipplesEditor::resized() {
     const int sw = 130;
     Knob* sm[2] = { &inGain, &outGain };
     for (int i = 0; i < 2; ++i) {
-        auto cell = juce::Rectangle<int>(28 + i * sw, 270, sw, 96 - 2);
+        auto cell = juce::Rectangle<int>(28 + i * sw, 274, sw, 100);
         sm[i]->label.setBounds(cell.removeFromTop(16));
         sm[i]->slider.setBounds(cell);
     }
-    hint.setBounds(28 + 2 * sw + 20, 280, getWidth() - (28 + 2 * sw + 20) - 28, 60);
+    hint.setBounds(28 + 2 * sw + 24, 290, getWidth() - (28 + 2 * sw + 24) - 28, 64);
     hint.setJustificationType(juce::Justification::topLeft);
     hint.setMinimumHorizontalScale(1.0f);
     (void) r;
