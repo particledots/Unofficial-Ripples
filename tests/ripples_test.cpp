@@ -363,8 +363,38 @@ static void testSilenceAndReset() {
     CHECK(after < 1e-6, "state survived reset: %g", after);
 }
 
+static void testResponseFormula() {
+    printf("-- the panel's response curve formula against the real model\n");
+    int n = 0; double worst = 0;
+    for (int o = 0; o < 4; ++o) for (double hz : {300.0, 1500.0}) for (double kk : {0.0, 0.3, 0.5, 0.6, 0.8}) for (bool smooth : {false, true}) {
+        const double iReso = resoCurrent(kk, smooth);
+        if (iReso > 0.8 * kIThreshold) continue;   // close to self-oscillation the real model saturates and shifts; straight-line theory no longer applies there
+        // knob position in the plug-in's units: the Voice turns it into the same current
+        for (double mul : {0.05, 0.3, 1.0, 3.0, 6.0}) {
+            const double f = hz * mul; if (f > 9000.0) continue;
+            Voice v; v.reset(); v.smoothTaper = smooth; const double fs = 96000.0; const int len = (int)(0.8 * fs);
+            double sr = 0, si = 0, ir = 0, ii = 0; const double amp = 0.01;
+            for (int i = 0; i < len; ++i) { const double ph = 2.0 * kPi * f * i / fs; const float x = (float)(amp * std::sin(ph));
+                const float y = v.process(x, (Output) o, hz, kk, 0.3, 1.0, 1.0, fs);
+                if (i > len / 2) { sr += y * std::sin(ph); si += y * std::cos(ph); ir += x * std::sin(ph); ii += x * std::cos(ph); } }
+            const double got = std::hypot(sr, si) / std::hypot(ir, ii);
+            const double want = std::abs(response((Output) o, f, hz, iReso, 0.3 * kIVcaMax));
+            if (want < 0.01) continue;
+            const double r = got / want; ++n; worst = std::max(worst, std::fabs(r - 1.0));
+            const double tol = (iReso > 0.6 * kIThreshold && mul > 0.8 && mul < 1.25) ? 0.06 : 0.025;
+            CHECK(std::fabs(r - 1.0) < tol, "out %d hz %g knob %g smooth %d f %g: model %g, formula %g", o, hz, kk, (int) smooth, f, got, want);
+        }
+    }
+    printf("   %d comparisons, worst difference %.2f %%\n", n, 100.0 * worst);
+    CHECK(n > 100, "too few comparisons: %d", n);
+    // hand-worked: LP4 at DC with no resonance = (33k/100k) * (100k/33k) = 1 (unity), LP2 = (33/100)*(100/39) = 0.846, in phase (+): four inversions for LP4
+    CHECK(std::fabs(std::abs(response(LP4, 1.0, 1000.0, 0.0, 0.0)) - 1.0) < 0.01 && std::fabs(std::abs(response(LP2, 1.0, 1000.0, 0.0, 0.0)) - 0.846) < 0.01, "DC gains in the formula");
+    // the formula reaches the same self-oscillation point the model does: at the threshold current the peak is large (loop gain 1)
+    CHECK(std::abs(response(LP4, 1000.0, 1000.0, kIThreshold * 0.999, 0.0)) > 10.0 * std::abs(response(LP4, 100.0, 1000.0, kIThreshold * 0.999, 0.0)), "no peak at the threshold in the formula");
+}
+
 int main() {
-    testOversampler(); testGains(); testCutoffAndSlope(); testHighCutoffAndOverload(); testSampleRates(); testResonance(); testVca(); testStability(); testOutputSwitch(); testFm(); testRailKnee(); testSmoothTaper(); testSpeedUps(); testEnvFollower(); testSilenceAndReset();
+    testOversampler(); testGains(); testCutoffAndSlope(); testHighCutoffAndOverload(); testSampleRates(); testResonance(); testVca(); testStability(); testOutputSwitch(); testFm(); testRailKnee(); testSmoothTaper(); testSpeedUps(); testEnvFollower(); testSilenceAndReset(); testResponseFormula();
     printf("\n%d checks, %d failed\n", checks, fails);
     return fails ? 1 : 0;
 }

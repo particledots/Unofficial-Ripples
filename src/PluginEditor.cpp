@@ -126,10 +126,51 @@ RipplesEditor::RipplesEditor(UnofficialRipplesProcessor& p) : AudioProcessorEdit
     hint.setFont(juce::FontOptions(11.0f)); hint.setColour(juce::Label::textColourId, RipplesLook::dim());
     hint.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(hint);
-    setSize(780, 430);
+    setSize(780, 580);
+    startTimerHz(20);
 }
 
-RipplesEditor::~RipplesEditor() { setLookAndFeel(nullptr); }
+RipplesEditor::~RipplesEditor() { stopTimer(); setLookAndFeel(nullptr); }
+
+void RipplesEditor::timerCallback() {
+    const double sig = param("freq") + 3.1 * param("reso") + 7.7 * param("taper") + 13.0 * param("output") + 23.0 * param("vca");
+    if (std::fabs(sig - lastSig) > 1e-9) { lastSig = sig; repaint(curveArea); }
+}
+
+// The shape of the filter at the current settings (small-signal maths: see ripples::response), not a measurement of the real module.
+void RipplesEditor::drawCurve(juce::Graphics& g, juce::Rectangle<int> r) const {
+    g.setColour(RipplesLook::bg()); g.fillRoundedRectangle(r.toFloat(), 6.0f);
+    const double fLo = 20.0, fHi = 20000.0, dbLo = -48.0, dbHi = 24.0;
+    auto X = [&](double f) { return r.getX() + (float) (std::log(f / fLo) / std::log(fHi / fLo)) * r.getWidth(); };
+    auto Y = [&](double d) { return r.getBottom() - (float) ((juce::jlimit(dbLo, dbHi, d) - dbLo) / (dbHi - dbLo)) * r.getHeight(); };
+    g.setFont(juce::FontOptions(10.0f));
+    for (double f : { 100.0, 1000.0, 10000.0 }) {
+        g.setColour(RipplesLook::panel().brighter(0.1f)); g.drawVerticalLine((int) X(f), (float) r.getY(), (float) r.getBottom());
+        g.setColour(RipplesLook::dim()); g.drawText(f >= 1000.0 ? juce::String((int) (f / 1000.0)) + " kHz" : juce::String((int) f) + " Hz", (int) X(f) + 3, r.getBottom() - 14, 50, 12, juce::Justification::left);
+    }
+    for (double d : { -36.0, -24.0, -12.0, 0.0, 12.0 }) {
+        g.setColour(d == 0.0 ? RipplesLook::panel().brighter(0.35f) : RipplesLook::panel().brighter(0.1f)); g.drawHorizontalLine((int) Y(d), (float) r.getX(), (float) r.getRight());
+        g.setColour(RipplesLook::dim()); g.drawText(juce::String((int) d) + " dB", r.getX() + 3, (int) Y(d) - 12, 44, 12, juce::Justification::left);
+    }
+    const double hz = param("freq"), q = param("reso");
+    const bool smooth = param("taper") < 0.5;
+    const auto out = (ripples::Output) juce::jlimit(0, 3, (int) std::lround(param("output")));
+    const double iReso = ripples::resoCurrent(q, smooth), iVca = param("vca") * ripples::kIVcaMax;
+    { const float x = X(hz); const float dash[] = { 4.0f, 4.0f }; g.setColour(RipplesLook::dim().withAlpha(0.7f));
+      g.drawDashedLine(juce::Line<float>(x, (float) r.getY(), x, (float) r.getBottom()), dash, 2, 1.0f); }
+    juce::Path path; const int W = r.getWidth();
+    for (int i = 0; i <= W; i += 2) {
+        const double f = fLo * std::pow(fHi / fLo, (double) i / W);
+        const double mag = std::abs(ripples::response(out, f, hz, iReso, iVca));
+        const float y = Y(20.0 * std::log10(std::max(mag, 1e-6))), x = (float) (r.getX() + i);
+        if (i == 0) path.startNewSubPath(x, y); else path.lineTo(x, y);
+    }
+    g.saveState(); g.reduceClipRegion(r);
+    g.setColour(RipplesLook::accent()); g.strokePath(path, juce::PathStrokeType(2.0f));
+    g.restoreState();
+    g.setColour(RipplesLook::dim()); g.setFont(juce::FontOptions(10.0f));
+    g.drawText("Shape of the filter at the current settings (small signals; not a measurement of the real module)", r.getX() + 50, r.getY() + 3, r.getWidth() - 60, 12, juce::Justification::right);
+}
 
 void RipplesEditor::paint(juce::Graphics& g) {
     g.fillAll(RipplesLook::bg());
@@ -140,8 +181,9 @@ void RipplesEditor::paint(juce::Graphics& g) {
     g.drawText("four-pole filter, modelled from a published circuit", 28, 48, 420, 18, juce::Justification::centredLeft);
     g.setColour(RipplesLook::dim()); g.setFont(juce::FontOptions(11.0f, juce::Font::bold));
     g.drawText("OUTPUT", 28, 84, 80, 14, juce::Justification::centredLeft);
+    drawCurve(g, curveArea);
     g.setColour(RipplesLook::panel().brighter(0.2f));
-    g.drawHorizontalLine(266, 28.0f, (float) getWidth() - 28.0f);
+    g.drawHorizontalLine(266 + 150, 28.0f, (float) getWidth() - 28.0f);
 }
 
 void RipplesEditor::resized() {
@@ -151,8 +193,9 @@ void RipplesEditor::resized() {
         const int bw = 118, gap = 8, y = 102;
         for (int i = 0; i < 4; ++i) outButtons[i].setBounds(28 + i * (bw + gap), y, bw, 28);
     }
+    curveArea = { 28, 136, getWidth() - 56, 136 };
     // main knobs
-    const int kw = (getWidth() - 56) / 4, y0 = 134;
+    const int kw = (getWidth() - 56) / 4, y0 = 134 + 150;
     Knob* big[4] = { &freq, &reso, &fm, &vca };
     for (int i = 0; i < 4; ++i) {
         auto cell = juce::Rectangle<int>(28 + i * kw, y0, kw, 126);
@@ -163,25 +206,25 @@ void RipplesEditor::resized() {
     const int sw = 130;
     Knob* sm[2] = { &inGain, &outGain };
     for (int i = 0; i < 2; ++i) {
-        auto cell = juce::Rectangle<int>(28 + i * sw, 274, sw, 100);
+        auto cell = juce::Rectangle<int>(28 + i * sw, 274 + 150, sw, 100);
         sm[i]->label.setBounds(cell.removeFromTop(16));
         sm[i]->slider.setBounds(cell);
     }
     {
         const int x0 = 28 + 2 * sw + 24, w = getWidth() - x0 - 28;
-        fmLabel.setBounds(x0, 276, w, 14);
-        for (int i = 0; i < 3; ++i) fmButtons[i].setBounds(x0 + i * 88, 292, 82, 26);
-        fmLabel.setBounds(x0, 276, 260, 14);
+        fmLabel.setBounds(x0, 276 + 150, w, 14);
+        for (int i = 0; i < 3; ++i) fmButtons[i].setBounds(x0 + i * 88, 292 + 150, 82, 26);
+        fmLabel.setBounds(x0, 276 + 150, 260, 14);
         for (int i = 0; i < 2; ++i) {
             Knob* k = i == 0 ? &fmAtk : &fmDec;
-            auto cell = juce::Rectangle<int>(x0 + 272 + i * 84, 274, 84, 100);
+            auto cell = juce::Rectangle<int>(x0 + 272 + i * 84, 274 + 150, 84, 100);
             k->label.setBounds(cell.removeFromTop(16));
             k->slider.setBounds(cell);
         }
-        taperLabel.setBounds(x0, 326, w, 14);
-        taperButtons[0].setBounds(x0, 342, 125, 26);
-        taperButtons[1].setBounds(x0 + 135, 342, 125, 26);
-        hint.setBounds(28, 380, getWidth() - 56, 40);
+        taperLabel.setBounds(x0, 326 + 150, w, 14);
+        taperButtons[0].setBounds(x0, 342 + 150, 125, 26);
+        taperButtons[1].setBounds(x0 + 135, 342 + 150, 125, 26);
+        hint.setBounds(28, 380 + 150, getWidth() - 56, 40);
     }
     hint.setJustificationType(juce::Justification::topLeft);
     hint.setMinimumHorizontalScale(1.0f);

@@ -15,6 +15,7 @@
 #include <cmath>
 #include <vector>
 #include <algorithm>
+#include <complex>
 
 namespace ripples {
 
@@ -231,5 +232,29 @@ private:
     int fmPos = 0;
     double fmPrev = 0.0;
 };
+
+// OTA current for a Resonance knob position (0..1) and taper (true = Smooth), as the Voice uses it.
+inline double resoCurrent(double q, bool smooth) { q = std::max(0.0, std::min(1.0, q)); return smooth ? smoothLoopGain(q) * kIThreshold : q * kIQmax; }
+
+// Small-signal response (linear theory), for the panel's curve and for the tests, which compare it with the real model.
+// Gain from the input (volts) to the chosen output (volts) at frequency f. Excludes the plug-in's Input and Output gain.
+// Each stage is H = 1/(1 + j f/f0). With K = gm * R * kFbDiv (gm = iReso / 2Vt) and Kin = gm * R * kInDiv:
+//   w1 = (R/Rin * x + Kin * HP(x)) / (1 + K H^4);  LP1..LP4 = -H w1, +H^2 w1, -H^3 w1, +H^4 w1.
+inline std::complex<double> response(Output out, double f, double stageHz, double iReso, double iVca) {
+    using C = std::complex<double>;
+    const C j(0.0, 1.0);
+    const C H = 1.0 / (1.0 + j * (f / stageHz));
+    const double gm = iReso / kVt2;
+    const double K = gm * kR_stage * kFbDiv, Kin = gm * kR_stage * kInDiv;
+    const C hpIn = (j * f) / (2.4 + j * f);
+    const C w1 = ((kR_stage / kR_in) + Kin * hpIn) / (1.0 + K * H * H * H * H);
+    const C y1 = -H * w1, y2 = H * H * w1, y4 = H * H * H * H * w1;
+    switch (out) {
+        case LP2: return -(100e3 / 39e3) * y2;
+        case LP4: return -(100e3 / 33e3) * y4;
+        case BP2: return -(100e3 / 39e3) * (y1 + y2);
+        default: { const C hpV = (j * f) / (0.34 + j * f); return -100e3 * iVca * (y4 * hpV) * kVcaDiv / kVt2; }
+    }
+}
 
 } // namespace ripples

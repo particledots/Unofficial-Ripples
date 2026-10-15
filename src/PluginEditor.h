@@ -16,7 +16,7 @@ public:
     static juce::Colour dim()    { return juce::Colour(0xff8b929c); }
 };
 
-class RipplesEditor : public juce::AudioProcessorEditor {
+class RipplesEditor : public juce::AudioProcessorEditor, private juce::Timer {
 public:
     explicit RipplesEditor(UnofficialRipplesProcessor&);
     ~RipplesEditor() override;
@@ -24,6 +24,11 @@ public:
     void resized() override;
 
 private:
+    void timerCallback() override;
+    void drawCurve(juce::Graphics&, juce::Rectangle<int>) const;
+    double param(const char* id) const { return (double) *proc.apvts.getRawParameterValue(id); }
+    juce::Rectangle<int> curveArea;
+    double lastSig = -1.0;
     struct Knob {
         juce::Slider slider;
         juce::Label label;

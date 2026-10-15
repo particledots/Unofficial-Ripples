@@ -45,7 +45,7 @@ endorsed by the module's makers.
 | VCA level | 0–1, only for the "LP4 through VCA" output |
 | Input gain, Output gain | ±24 dB |
 
-The panel is a simple custom one (knobs, four output buttons). Every control is an ordinary parameter, so all of them can be automated in Logic.
+The panel is a custom one (knobs, four output buttons, and a curve showing the filter's shape at the current Frequency / Resonance / taper / Output settings). The curve is small-signal maths from the same circuit equations (checked against the model in the tests, within about 1.4%); it is not a measurement of the real module, it does not include Input / Output gain or FM, and near self-oscillation the real filter bends away from it. Every control is an ordinary parameter, so all of them can be automated in Logic.
 
 ## Resonance taper: Smooth vs As drawn
 
@@ -69,7 +69,7 @@ A test of the whole plug-in (`tools/proc_test.cpp`, run in the build) feeds a si
 
 ## Tests
 
-`tests/ripples_test.cpp` (1333 checks (plus the envelope follower and the speed-up checks), no JUCE): oversampler gain and delay; gain and polarity of each output; BP2 has no DC; slopes of 12 and 24 dB per octave; −6 dB / −12 dB at the stage
+`tests/ripples_test.cpp` (1536 checks (including the envelope follower, the speed-up checks and the curve formula against the model), no JUCE): oversampler gain and delay; gain and polarity of each output; BP2 has no DC; slopes of 12 and 24 dB per octave; −6 dB / −12 dB at the stage
 frequency for LP2 / LP4; the same answers at 44.1, 48 and 96 kHz; resonance (dies away below the threshold, keeps going above it, pitch follows Frequency within 5%, peak grows with Q, the output stays bounded);
 the VCA output scales with its control and blocks DC; no crash, NaN or runaway with random extreme settings at 44.1 / 96 / 192 kHz; rail clipping; output switching without a click; FM (+1 octave equals doubling the frequency, −1 halves it, an FM step lines up with the audio, audio-rate FM stays bounded); the rail bend (linear to 70%, continuous, symmetric, never past the rail); the smooth taper (zero at 0, threshold at 88%, rising, an even rise, no oscillation before 88%, oscillation after, the drawn setting unchanged); silence and reset.
 
