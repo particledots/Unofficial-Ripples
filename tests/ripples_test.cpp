@@ -265,6 +265,19 @@ static void testFm() {
     }
 }
 
+static void testRailKnee() {
+    printf("-- the rails: linear up to 70%%, smooth bend, never past the rail\n");
+    for (double v : { 0.0, 1.0, -3.0, 7.0, -7.3 }) CHECK(std::fabs(clipRail(v) - v) < 1e-12, "not linear at %g V: %g", v, clipRail(v));
+    double prev = clipRail(7.35);
+    for (double v = 7.4; v < 60.0; v += 0.05) {
+        double c = clipRail(v);
+        CHECK(c >= prev - 1e-12 && c <= kRail + 1e-9 && c - prev < 0.06, "knee misbehaves at %g V: %g (before %g)", v, c, prev);
+        prev = c;
+    }
+    CHECK(std::fabs(clipRail(-5.0) + clipRail(5.0)) < 1e-12 && std::fabs(clipRail(-30.0) + clipRail(30.0)) < 1e-12, "not symmetric");
+    CHECK(clipRail(1000.0) > 0.999 * kRail, "does not reach the rail: %g", clipRail(1000.0));
+}
+
 static void testSilenceAndReset() {
     printf("-- silence in, silence out; reset clears the state\n");
     Voice v; v.reset();
@@ -277,7 +290,7 @@ static void testSilenceAndReset() {
 }
 
 int main() {
-    testOversampler(); testGains(); testCutoffAndSlope(); testHighCutoffAndOverload(); testSampleRates(); testResonance(); testVca(); testStability(); testOutputSwitch(); testFm(); testSilenceAndReset();
+    testOversampler(); testGains(); testCutoffAndSlope(); testHighCutoffAndOverload(); testSampleRates(); testResonance(); testVca(); testStability(); testOutputSwitch(); testFm(); testRailKnee(); testSilenceAndReset();
     printf("\n%d checks, %d failed\n", checks, fails);
     return fails ? 1 : 0;
 }

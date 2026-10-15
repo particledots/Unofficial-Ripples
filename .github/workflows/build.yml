@@ -66,7 +66,8 @@ jobs:
              (it is a normal audio effect; put it on an audio or instrument track).
           5. Controls: FREQUENCY (each of the four stages' pole frequency), RESONANCE (it self-oscillates above about 75%),
              OUTPUT (LP2, LP4, BP2, or LP4 through the VCA), VCA LEVEL (only used by that last output), INPUT GAIN, OUTPUT GAIN.
-             FM: send a track to this plug-in's sidechain input and turn up FM AMOUNT (the sidechain signal moves the frequency).
+             FM: FM AMOUNT sets how much; FM SOURCE picks Sidechain (a track routed to the plug-in's Side Chain menu) or Own input.
+             If Logic still shows an older version (or no Side Chain menu): Settings > Plug-in Manager > select it > Reset & Rescan Selection.
              The plug-in reports about 31 samples of delay to Logic (its oversampling filters).
           TXT
           ditto -c -k --keepParent dist Unofficial-Ripples-macOS.zip

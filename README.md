@@ -18,13 +18,13 @@ endorsed by the module's makers.
   The feedback loop has no delay: it is solved exactly for every sample.
 * **Outputs:** LP2 (12 dB low-pass, inverted), LP4 (24 dB low-pass, inverted), BP2 (LP1 + LP2, inverted; it has no bass), and **LP4 through the VCA** (AC-coupled, controlled by **VCA level**).
   The polarity is the hardware's (each output stage inverts); it is not audible on its own.
-* The op-amps stop at the supply rails (modelled as ±10.5 V).
+* The op-amps stop at the supply rails (modelled as ±10.5 V): linear up to 70% of the rail, then a smooth bend, not a brick wall.
 * Runs at 2× oversampling (a 63-tap filter; the plug-in reports about 31 samples of latency to the host).
 
 ## Things that are guesses, not read from the drawing
 
-1. **Level:** 0 dBFS = 5 V. (The module has no such number; I chose it.) Input gain and Output gain let you move it.
-2. **Rails:** ±10.5 V clipping.
+1. **Level:** 0 dBFS = 10 V, so the rails (10.5 V) sit just above full scale and the plug-in cannot go far over 0 dBFS. (The module has no such number; I chose it. The first two builds used 5 V, which let the output run up to +6 dBFS.) Input gain and Output gain let you move it.
+2. **Rails:** ±10.5 V, with the soft bend above 70%.
 3. **Resonance knob scaling:** the drawing's Q control chain (op-amp, PNP transistor, offset) was not worked through in detail. The knob is scaled so that **self-oscillation starts at 0.75**,
    from a loop-gain estimate (four equal poles give loop gain 1 when the OTA current is about 145 µA, and I set 100% = 193 µA). So "starts at 0.75" in the tests confirms the maths, not the hardware.
 4. **VCA level scaling:** 100% = 185 µA OTA bias (roughly 5 V into the 27k input resistor). The hardware's own VCA CV chain was not modelled.
@@ -47,18 +47,24 @@ The panel is a simple custom one (knobs, four output buttons). Every control is 
 
 ## FM input
 
-The original has no FM jack. It has a CV input with a level knob that moves the frequency, which is what FM does, so this plug-in has one: route any track to the plug-in's **sidechain** input (in Logic: the Side Chain menu at the top of the plug-in window) and raise **FM AMOUNT**.
-The signal moves the frequency of all four stages exponentially (octaves, like the hardware's 1 V/oct summing); FM AMOUNT 100% = 1 octave per volt, with full scale taken as 5 V, so a full-scale signal at 100% swings five octaves each way. Positive = higher. A stereo sidechain is averaged to mono.
-The FM signal is delayed to line up with the audio it belongs to. **Guesses:** the scale (1 V/oct at 5 V full scale) and the plain linear sum in octaves; the hardware's CV attenuator and its exponential converter were not modelled in detail. Not yet tried in Logic.
+The original has no FM jack. It has a CV input with a level knob that moves the frequency, which is what FM does, so this plug-in has one. **FM AMOUNT** sets how much; **FM SOURCE** picks what does the modulating:
+
+* **Sidechain:** another track goes into the plug-in's sidechain input (in Logic: the **Side Chain** menu in the plug-in window's header bar, next to the View menu).
+* **Own input:** the sound going into the filter also modulates its frequency (audio-rate self-FM). This needs no routing, so use it first to hear what FM does.
+
+The signal moves the frequency of all four stages exponentially, in octaves (like the hardware's 1 V/oct summing). FM AMOUNT 100% = 5 octaves for a full-scale signal. Positive = higher. A stereo sidechain is averaged to mono.
+The FM signal is delayed to line up with the audio it belongs to. **Guesses:** the scale and the plain linear sum in octaves; the hardware's CV attenuator and exponential converter were not modelled in detail.
+**Logic caches what a plug-in offers, by version number.** Each build that changes the plug-in's inputs raises the version (this one is 0.3.0). If the Side Chain menu is missing: Logic Pro > Settings > Plug-in Manager, select Unofficial Ripples, click **Reset & Rescan Selection**.
+Not yet tried in Logic: the sidechain and Own input.
 
 ## Tests
 
-`tests/ripples_test.cpp` (53 checks, no JUCE): oversampler gain and delay; gain and polarity of each output; BP2 has no DC; slopes of 12 and 24 dB per octave; −6 dB / −12 dB at the stage
+`tests/ripples_test.cpp` (1113 checks, no JUCE): oversampler gain and delay; gain and polarity of each output; BP2 has no DC; slopes of 12 and 24 dB per octave; −6 dB / −12 dB at the stage
 frequency for LP2 / LP4; the same answers at 44.1, 48 and 96 kHz; resonance (dies away below the threshold, keeps going above it, pitch follows Frequency within 5%, peak grows with Q, the output stays bounded);
-the VCA output scales with its control and blocks DC; no crash, NaN or runaway with random extreme settings at 44.1 / 96 / 192 kHz; rail clipping; output switching without a click; FM (+1 octave equals doubling the frequency, −1 halves it, an FM step lines up with the audio, audio-rate FM stays bounded); silence and reset.
+the VCA output scales with its control and blocks DC; no crash, NaN or runaway with random extreme settings at 44.1 / 96 / 192 kHz; rail clipping; output switching without a click; FM (+1 octave equals doubling the frequency, −1 halves it, an FM step lines up with the audio, audio-rate FM stays bounded); the rail bend (linear to 70%, continuous, symmetric, never past the rail); silence and reset.
 
 **Deliberate breaks** (a change made to a copy, to check the tests notice): wrong feedback sign, wrong stage resistor, wrong LP2 ratio, BP2 missing LP2, no input path through the OTA, no frequency warping, VCA output not AC-coupled,
-no rail clipping, wrong Q scale, wrong state update, no fade on output change, FM too weak, FM upside down, FM not delayed to match the audio. Each is caught by at least one check.
+no rail clipping, wrong Q scale, wrong state update, no fade on output change, FM too weak, FM upside down, FM not delayed to match the audio, hard rails, rails bending too early. Each is caught by at least one check.
 
 CPU on the Linux test machine: about 6% of one core for a stereo instance at 48 kHz (not measured on a Mac).
 

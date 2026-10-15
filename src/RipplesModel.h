@@ -19,7 +19,7 @@
 namespace ripples {
 
 constexpr double kPi          = 3.14159265358979323846;
-constexpr double kVoltsPerFS  = 5.0;      // ASSUMPTION: 0 dBFS = 5 V peak (not from the drawing)
+constexpr double kVoltsPerFS  = 10.0;     // ASSUMPTION: 0 dBFS = 10 V peak (not from the drawing); chosen so the supply rails sit at about full scale
 constexpr double kRail        = 10.5;     // ASSUMPTION: TL072 output swing on +-12 V
 constexpr double kR_stage     = 33e3;     // R8/R2/R6/R13 (feedback) and R1/R5/R12 (inter-stage)
 constexpr double kR_in        = 100e3;    // R9
@@ -34,7 +34,13 @@ constexpr double kIVcaMax     = 185e-6;         // ASSUMPTION: VCA level 1.0 (ab
 
 enum Output { LP2 = 0, LP4 = 1, BP2 = 2, LP4_VCA = 3 };
 
-inline double clipRail(double v) { return std::max(-kRail, std::min(kRail, v)); }
+// The op-amps stop at the rails, but not like a brick wall: linear up to 70% of the rail, then a smooth bend (tanh) that reaches the rail.
+inline double clipRail(double v) {
+    const double a = 0.7 * kRail, b = kRail - a, m = std::fabs(v);
+    if (m <= a) return v;
+    const double r = a + b * std::tanh((m - a) / b);
+    return v < 0 ? -r : r;
+}
 
 // 2x oversampler: linear-phase half-band-style FIR (windowed sinc, cutoff fs/4 of the 2x rate)
 class Oversampler2x {

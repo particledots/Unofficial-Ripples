@@ -81,7 +81,25 @@ RipplesEditor::RipplesEditor(UnofficialRipplesProcessor& p) : AudioProcessorEdit
     }
     outAttach->sendInitialUpdate();
 
-    hint.setText("FM: send a track to this plug-in's sidechain input and turn up FM AMOUNT.   VCA LEVEL is used by the LP4 > VCA output only.",
+    {
+        static const char* fmNames[2] = { "SIDECHAIN", "OWN INPUT" };
+        auto* fmParam = dynamic_cast<juce::RangedAudioParameter*>(proc.apvts.getParameter("fmsrc"));
+        fmAttach = std::make_unique<juce::ParameterAttachment>(*fmParam, [this](float v) {
+            const int sel = (int) std::lround(v);
+            for (int i = 0; i < 2; ++i) fmButtons[i].setToggleState(i == sel, juce::dontSendNotification);
+        });
+        for (int i = 0; i < 2; ++i) {
+            fmButtons[i].setButtonText(fmNames[i]);
+            fmButtons[i].onClick = [this, i] { fmAttach->setValueAsCompleteGesture((float) i); };
+            addAndMakeVisible(fmButtons[i]);
+        }
+        fmAttach->sendInitialUpdate();
+        fmLabel.setText("FM SOURCE", juce::dontSendNotification);
+        fmLabel.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+        fmLabel.setColour(juce::Label::textColourId, RipplesLook::dim());
+        addAndMakeVisible(fmLabel);
+    }
+    hint.setText("SIDECHAIN: route another track into this plug-in's sidechain.  OWN INPUT: the sound going into the filter also modulates its frequency.  VCA LEVEL is used by the LP4 > VCA output only.",
                  juce::dontSendNotification);
     hint.setFont(juce::FontOptions(11.0f)); hint.setColour(juce::Label::textColourId, RipplesLook::dim());
     hint.setJustificationType(juce::Justification::centredLeft);
@@ -127,7 +145,13 @@ void RipplesEditor::resized() {
         sm[i]->label.setBounds(cell.removeFromTop(16));
         sm[i]->slider.setBounds(cell);
     }
-    hint.setBounds(28 + 2 * sw + 24, 290, getWidth() - (28 + 2 * sw + 24) - 28, 64);
+    {
+        const int x0 = 28 + 2 * sw + 24, w = getWidth() - x0 - 28;
+        fmLabel.setBounds(x0, 276, w, 14);
+        fmButtons[0].setBounds(x0, 294, 118, 26);
+        fmButtons[1].setBounds(x0 + 126, 294, 118, 26);
+        hint.setBounds(x0, 326, w, 44);
+    }
     hint.setJustificationType(juce::Justification::topLeft);
     hint.setMinimumHorizontalScale(1.0f);
     (void) r;

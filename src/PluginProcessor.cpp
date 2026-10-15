@@ -19,6 +19,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout UnofficialRipplesProcessor::
         StringArray{ "LP2 (12 dB low-pass)", "LP4 (24 dB low-pass)", "BP2 (band-pass)", "LP4 through VCA" }, 1));
     // FM: the sidechain signal moves the Frequency exponentially. 1.0 = one octave per volt (full scale = 5 V), so a full-scale signal at 1.0 swings 5 octaves each way.
     p.push_back(std::make_unique<AudioParameterFloat>(ParameterID{ "fm", 1 }, "FM amount", NormalisableRange<float>(0.0f, 1.0f, 0.0f, 0.5f), 0.0f));
+    p.push_back(std::make_unique<AudioParameterChoice>(ParameterID{ "fmsrc", 1 }, "FM source", StringArray{ "Sidechain", "Own input" }, 0));
     p.push_back(std::make_unique<AudioParameterFloat>(ParameterID{ "vca", 1 }, "VCA level", NormalisableRange<float>(0.0f, 1.0f), 0.3f));
     p.push_back(std::make_unique<AudioParameterFloat>(ParameterID{ "ingain", 1 }, "Input gain", NormalisableRange<float>(-24.0f, 24.0f), 0.0f,
         AudioParameterFloatAttributes().withLabel("dB")));
@@ -58,6 +59,7 @@ void UnofficialRipplesProcessor::processBlock(juce::AudioBuffer<float>& buf, juc
     const double targetQ = (double) *apvts.getRawParameterValue("reso");
     const double targetVca = (double) *apvts.getRawParameterValue("vca");
     const double fmAmt = (double) *apvts.getRawParameterValue("fm");
+    const bool fmOwn = *apvts.getRawParameterValue("fmsrc") > 0.5f;     // true: the plug-in's own input is the FM signal
     const auto out = (ripples::Output) juce::jlimit(0, 3, (int) std::lround(*apvts.getRawParameterValue("output")));
     const double inG = std::pow(10.0, *apvts.getRawParameterValue("ingain") / 20.0);
     const double outG = std::pow(10.0, *apvts.getRawParameterValue("outgain") / 20.0);
@@ -66,14 +68,17 @@ void UnofficialRipplesProcessor::processBlock(juce::AudioBuffer<float>& buf, juc
     const double a = 1.0 - std::exp(-1.0 / (0.005 * fs));
     const double tl = std::log(std::max(1.0, targetHz));
     float* d[2] = { mainBuf.getWritePointer(0), chans > 1 ? mainBuf.getWritePointer(1) : nullptr };
-    const double fmScale = fmAmt * ripples::kVoltsPerFS;     // octaves per unit of sidechain level
+    const double fmScale = fmAmt * 5.0;     // octaves per unit of FM signal: 100% = 5 octaves for a full-scale signal (1 V/oct with full scale = 5 V)
     for (int i = 0; i < n; ++i) {
         smHzLog += a * (tl - smHzLog); smQ += a * (targetQ - smQ); smVca += a * (targetVca - smVca);
         const double hz = std::exp(smHzLog);
-        double fm = 0.0;
-        if (scChans == 1) fm = sc[0][i]; else if (scChans == 2) fm = 0.5 * (sc[0][i] + sc[1][i]);
-        fm *= fmScale;
-        for (int c = 0; c < chans; ++c) d[c][i] = voices[c].process(d[c][i], out, hz, smQ, smVca, inG, outG, fs, fm);
+        double fmSide = 0.0;
+        if (scChans == 1) fmSide = sc[0][i]; else if (scChans == 2) fmSide = 0.5 * (sc[0][i] + sc[1][i]);
+        for (int c = 0; c < chans; ++c) {
+            const float x = d[c][i];
+            const double fm = (fmOwn ? (double) x : fmSide) * fmScale;
+            d[c][i] = voices[c].process(x, out, hz, smQ, smVca, inG, outG, fs, fm);
+        }
     }
 }
 

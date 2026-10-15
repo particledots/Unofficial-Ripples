@@ -35,6 +35,9 @@ private:
     RipplesLook look;
     Knob freq, reso, fm, vca, inGain, outGain;
     juce::TextButton outButtons[4];
+    juce::TextButton fmButtons[2];
+    std::unique_ptr<juce::ParameterAttachment> fmAttach;
+    juce::Label fmLabel;
     std::unique_ptr<juce::ParameterAttachment> outAttach;
     juce::Label hint;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RipplesEditor)
