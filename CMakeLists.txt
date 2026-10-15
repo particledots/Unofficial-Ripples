@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(UnofficialRipplesPlugin VERSION 0.3.0)   # raise this with every build that changes the plug-in's inputs/outputs, so Logic re-reads it
+project(UnofficialRipplesPlugin VERSION 0.4.0)   # raise this with every build that changes the plug-in's inputs/outputs, so Logic re-reads it
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

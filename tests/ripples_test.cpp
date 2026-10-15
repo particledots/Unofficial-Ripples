@@ -278,6 +278,34 @@ static void testRailKnee() {
     CHECK(clipRail(1000.0) > 0.999 * kRail, "does not reach the rail: %g", clipRail(1000.0));
 }
 
+static void testSmoothTaper() {
+    printf("-- smooth resonance taper\n");
+    CHECK(std::fabs(smoothLoopGain(0.0)) < 1e-12, "k(0) = %g", smoothLoopGain(0.0));
+    CHECK(std::fabs(smoothLoopGain(kSmoothOnset) - 1.0) < 1e-9, "k(onset) = %g", smoothLoopGain(kSmoothOnset));
+    CHECK(std::fabs(smoothLoopGain(1.0) - 1.15) < 1e-9, "k(1) = %g", smoothLoopGain(1.0));
+    double prev = -1; for (double q = 0; q <= 1.0001; q += 0.005) { double k = smoothLoopGain(q); CHECK(k > prev, "not rising at %g", q); prev = k; }
+    CHECK(std::fabs(kIThreshold - 144e-6) < 3e-6, "threshold current %g", kIThreshold);
+    const double fs = 48000.0;
+    // self-oscillation starts where the taper says (near 0.88), and not before
+    auto ringS = [&](double q) {
+        Voice v; v.reset(); v.smoothTaper = true; const int n = (int)(4 * fs); std::vector<float> y(n);
+        for (int i = 0; i < n; ++i) y[i] = v.process(i < 20 ? 0.5f : 0.0f, LP4, 1000.0, q, 0, 1, 1, fs);
+        return tailRms(y, (int)(3.5 * fs)); };
+    CHECK(ringS(0.84) < 1e-4, "smooth taper: still ringing at 0.84: %g", ringS(0.84));
+    CHECK(ringS(0.93) > 0.005, "smooth taper: no self-oscillation at 0.93: %g", ringS(0.93));
+    // the peak rises evenly: between 0.2 and 0.8 each step of 0.2 adds between 4 and 20 dB (the drawn linear taper rises 5 dB over the first half of the knob and then shoots up)
+    auto pk = [&](double q, bool smooth) { Voice v; v.reset(); v.smoothTaper = smooth; const int n = (int)(1.5 * fs); double sr = 0, si = 0, cnt = 0;
+        for (int i = 0; i < n; ++i) { double ph = 2 * kPi * 2000.0 * i / fs; float y = v.process((float)(0.0003 * std::sin(ph)), LP4, 2000.0, q, 0, 1, 1, fs); if (i > n / 2) { sr += y * std::sin(ph); si += y * std::cos(ph); ++cnt; } }
+        return db(std::hypot(sr, si) / cnt * 2 / 0.0003); };
+    double p0 = pk(0.0, true), p2 = pk(0.2, true), p4 = pk(0.4, true), p6 = pk(0.6, true), p8 = pk(0.8, true);
+    CHECK(p2 - p0 > 4 && p2 - p0 < 20 && p4 - p2 > 4 && p4 - p2 < 20 && p6 - p4 > 4 && p6 - p4 < 20 && p8 - p6 > 4 && p8 - p6 < 20,
+          "uneven rise: %g %g %g %g %g dB", p0, p2, p4, p6, p8);
+    CHECK(p2 - p0 < 10.0 && p4 - p0 < 18.0 && p6 - p0 < 27.0, "smooth taper rises too fast early: %g %g %g", p2 - p0, p4 - p0, p6 - p0);
+    // the 'as drawn' setting is unchanged
+    Voice a, b; a.reset(); b.reset(); b.smoothTaper = false; double d = 0; for (int i = 0; i < 4800; ++i) { float x = (float)(0.1 * std::sin(i * 0.1)); d += std::fabs(a.process(x, LP4, 1000, 0.5, 0, 1, 1, 48000.0) - b.process(x, LP4, 1000, 0.5, 0, 1, 1, 48000.0)); }
+    CHECK(d == 0.0, "default taper is not the drawn one");
+}
+
 static void testSilenceAndReset() {
     printf("-- silence in, silence out; reset clears the state\n");
     Voice v; v.reset();
@@ -290,7 +318,7 @@ static void testSilenceAndReset() {
 }
 
 int main() {
-    testOversampler(); testGains(); testCutoffAndSlope(); testHighCutoffAndOverload(); testSampleRates(); testResonance(); testVca(); testStability(); testOutputSwitch(); testFm(); testRailKnee(); testSilenceAndReset();
+    testOversampler(); testGains(); testCutoffAndSlope(); testHighCutoffAndOverload(); testSampleRates(); testResonance(); testVca(); testStability(); testOutputSwitch(); testFm(); testRailKnee(); testSmoothTaper(); testSilenceAndReset();
     printf("\n%d checks, %d failed\n", checks, fails);
     return fails ? 1 : 0;
 }

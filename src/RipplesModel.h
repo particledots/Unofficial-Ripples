@@ -34,6 +34,22 @@ constexpr double kIVcaMax     = 185e-6;         // ASSUMPTION: VCA level 1.0 (ab
 
 enum Output { LP2 = 0, LP4 = 1, BP2 = 2, LP4_VCA = 3 };
 
+// OTA bias current at which the feedback loop gain is exactly 1 (self-oscillation): gm * R8 / 23 / 4 = 1 with gm = Iabc / (2 Vt).
+constexpr double kIThreshold  = (4.0 * 23.0 / kR_stage) * kVt2;      // about 144 uA
+
+// "Smooth" Resonance taper (a choice, NOT what the drawing says: the drawing's Q control is linear in current).
+// k = loop gain relative to self-oscillation (1 = starts to self-oscillate). Below the onset knob position the distance from
+// self-oscillation (1 - k) falls exponentially with the knob, so the peak rises evenly across the knob instead of all at the end;
+// above it k rises linearly to 1.15 at the top.
+constexpr double kSmoothOnset = 0.88;
+inline double smoothLoopGain(double q) {
+    q = std::max(0.0, std::min(1.0, q));
+    if (q >= kSmoothOnset) return 1.0 + (q - kSmoothOnset) * (0.15 / (1.0 - kSmoothOnset));
+    const double c = 1.5;
+    const double e0 = std::exp(-c * kSmoothOnset);
+    return 1.0 - (std::exp(-c * q) - e0) / (1.0 - e0);
+}
+
 // The op-amps stop at the rails, but not like a brick wall: linear up to 70% of the rail, then a smooth bend (tanh) that reaches the rail.
 inline double clipRail(double v) {
     const double a = 0.7 * kRail, b = kRail - a, m = std::fabs(v);
@@ -147,6 +163,7 @@ class Voice {
 public:
     static constexpr int kFmDelay = 31;     // = Oversampler2x::latencySamples()
     static_assert(kFmDelay == Oversampler2x::latencySamples(), "FM delay must equal the oversampler latency");
+    bool smoothTaper = false;     // false: Resonance as the drawing has it (linear current); true: the smoother taper above
     void reset() { os.reset(); ch0.reset(); curOut = prevOut = LP4; xf = 1.0; for (double& d : fmBuf) d = 0.0; fmPos = 0; fmPrev = 0.0; }
     // stageHz: pole frequency of each stage. q, vca: 0..1. inGainLin / outGainLin: linear gains.
     float process(float in, Output out, double stageHz, double q, double vca, double inGainLin, double outGainLin, double hostFs, double fmOct = 0.0) {
@@ -161,7 +178,8 @@ public:
         double a, b;
         os.up(in * inGainLin * kVoltsPerFS, a, b);
         const double fs2 = 2.0 * hostFs;
-        const double iq = std::max(0.0, std::min(1.0, q)) * kIQmax;
+        const double qq = std::max(0.0, std::min(1.0, q));
+        const double iq = smoothTaper ? smoothLoopGain(qq) * kIThreshold : qq * kIQmax;
         const double iv = std::max(0.0, std::min(1.0, vca)) * kIVcaMax;
         const double hzA = std::max(1.0, std::min(stageHz * std::exp2(fmA), kStageMaxHz));
         const double hzB = std::max(1.0, std::min(stageHz * std::exp2(fmB), kStageMaxHz));

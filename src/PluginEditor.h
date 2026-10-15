@@ -38,6 +38,9 @@ private:
     juce::TextButton fmButtons[2];
     std::unique_ptr<juce::ParameterAttachment> fmAttach;
     juce::Label fmLabel;
+    juce::TextButton taperButtons[2];
+    std::unique_ptr<juce::ParameterAttachment> taperAttach;
+    juce::Label taperLabel;
     std::unique_ptr<juce::ParameterAttachment> outAttach;
     juce::Label hint;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RipplesEditor)

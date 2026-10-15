@@ -99,12 +99,30 @@ RipplesEditor::RipplesEditor(UnofficialRipplesProcessor& p) : AudioProcessorEdit
         fmLabel.setColour(juce::Label::textColourId, RipplesLook::dim());
         addAndMakeVisible(fmLabel);
     }
-    hint.setText("SIDECHAIN: route another track into this plug-in's sidechain.  OWN INPUT: the sound going into the filter also modulates its frequency.  VCA LEVEL is used by the LP4 > VCA output only.",
+    {
+        static const char* tNames[2] = { "SMOOTH", "AS DRAWN" };
+        auto* tParam = dynamic_cast<juce::RangedAudioParameter*>(proc.apvts.getParameter("taper"));
+        taperAttach = std::make_unique<juce::ParameterAttachment>(*tParam, [this](float v) {
+            const int sel = (int) std::lround(v);
+            for (int i = 0; i < 2; ++i) taperButtons[i].setToggleState(i == sel, juce::dontSendNotification);
+        });
+        for (int i = 0; i < 2; ++i) {
+            taperButtons[i].setButtonText(tNames[i]);
+            taperButtons[i].onClick = [this, i] { taperAttach->setValueAsCompleteGesture((float) i); };
+            addAndMakeVisible(taperButtons[i]);
+        }
+        taperAttach->sendInitialUpdate();
+        taperLabel.setText("RESONANCE TAPER", juce::dontSendNotification);
+        taperLabel.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+        taperLabel.setColour(juce::Label::textColourId, RipplesLook::dim());
+        addAndMakeVisible(taperLabel);
+    }
+    hint.setText("FM: SIDECHAIN = another track routed into this plug-in's sidechain; OWN INPUT = the input also modulates the frequency.  TAPER: SMOOTH raises the resonance evenly and self-oscillates near 88%; AS DRAWN follows the schematic (self-oscillates at 75%).  VCA LEVEL only affects the LP4 > VCA output.",
                  juce::dontSendNotification);
     hint.setFont(juce::FontOptions(11.0f)); hint.setColour(juce::Label::textColourId, RipplesLook::dim());
     hint.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(hint);
-    setSize(600, 392);
+    setSize(600, 430);
 }
 
 RipplesEditor::~RipplesEditor() { setLookAndFeel(nullptr); }
@@ -148,11 +166,15 @@ void RipplesEditor::resized() {
     {
         const int x0 = 28 + 2 * sw + 24, w = getWidth() - x0 - 28;
         fmLabel.setBounds(x0, 276, w, 14);
-        fmButtons[0].setBounds(x0, 294, 118, 26);
-        fmButtons[1].setBounds(x0 + 126, 294, 118, 26);
-        hint.setBounds(x0, 326, w, 44);
+        fmButtons[0].setBounds(x0, 292, 118, 26);
+        fmButtons[1].setBounds(x0 + 126, 292, 118, 26);
+        taperLabel.setBounds(x0, 326, w, 14);
+        taperButtons[0].setBounds(x0, 342, 118, 26);
+        taperButtons[1].setBounds(x0 + 126, 342, 118, 26);
+        hint.setBounds(28, 378, getWidth() - 56, 40);
     }
     hint.setJustificationType(juce::Justification::topLeft);
+    hint.setMinimumHorizontalScale(1.0f);
     hint.setMinimumHorizontalScale(1.0f);
     (void) r;
 }

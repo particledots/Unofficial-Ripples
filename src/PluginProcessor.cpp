@@ -20,6 +20,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout UnofficialRipplesProcessor::
     // FM: the sidechain signal moves the Frequency exponentially. 1.0 = one octave per volt (full scale = 5 V), so a full-scale signal at 1.0 swings 5 octaves each way.
     p.push_back(std::make_unique<AudioParameterFloat>(ParameterID{ "fm", 1 }, "FM amount", NormalisableRange<float>(0.0f, 1.0f, 0.0f, 0.5f), 0.0f));
     p.push_back(std::make_unique<AudioParameterChoice>(ParameterID{ "fmsrc", 1 }, "FM source", StringArray{ "Sidechain", "Own input" }, 0));
+    // Resonance taper: Smooth (default, a departure from the drawing: peak rises evenly, self-oscillation near 88%) or As drawn (linear, self-oscillation at 75%)
+    p.push_back(std::make_unique<AudioParameterChoice>(ParameterID{ "taper", 1 }, "Resonance taper", StringArray{ "Smooth", "As drawn" }, 0));
     p.push_back(std::make_unique<AudioParameterFloat>(ParameterID{ "vca", 1 }, "VCA level", NormalisableRange<float>(0.0f, 1.0f), 0.3f));
     p.push_back(std::make_unique<AudioParameterFloat>(ParameterID{ "ingain", 1 }, "Input gain", NormalisableRange<float>(-24.0f, 24.0f), 0.0f,
         AudioParameterFloatAttributes().withLabel("dB")));
@@ -59,6 +61,8 @@ void UnofficialRipplesProcessor::processBlock(juce::AudioBuffer<float>& buf, juc
     const double targetQ = (double) *apvts.getRawParameterValue("reso");
     const double targetVca = (double) *apvts.getRawParameterValue("vca");
     const double fmAmt = (double) *apvts.getRawParameterValue("fm");
+    const bool smooth = *apvts.getRawParameterValue("taper") < 0.5f;
+    for (auto& v : voices) v.smoothTaper = smooth;
     const bool fmOwn = *apvts.getRawParameterValue("fmsrc") > 0.5f;     // true: the plug-in's own input is the FM signal
     const auto out = (ripples::Output) juce::jlimit(0, 3, (int) std::lround(*apvts.getRawParameterValue("output")));
     const double inG = std::pow(10.0, *apvts.getRawParameterValue("ingain") / 20.0);
