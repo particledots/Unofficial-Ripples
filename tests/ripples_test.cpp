@@ -306,6 +306,52 @@ static void testSmoothTaper() {
     CHECK(d == 0.0, "default taper is not the drawn one");
 }
 
+static void testSpeedUps() {
+    printf("-- the cheaper tan, tanh and the two-phase oversampler match the exact versions\n");
+    double worstTan = 0, worstTanh = 0;
+    for (double x = 0.0; x <= 1.0; x += 0.001) worstTan = std::max(worstTan, std::fabs(fastTan(x) / std::tan(x) - 1.0));
+    CHECK(worstTan < 5e-5, "fastTan relative error %g", worstTan);
+    for (double x = 0.001; x <= 1.26; x += 0.001) worstTan = std::max(worstTan, std::fabs(fastTan(x) / std::tan(x) - 1.0));
+    CHECK(worstTan < 0.01, "fastTan relative error up to 1.26: %g", worstTan);
+    for (double x = -8.0; x <= 8.0; x += 0.001) worstTanh = std::max(worstTanh, std::fabs(fastTanh(x) - std::tanh(x)));
+    CHECK(worstTanh < 1.1e-4, "fastTanh error %g", worstTanh);
+    // the oversampler, against a plain full-length convolution of the same filter
+    Oversampler2x os; os.reset();
+    const int m = 31; double h[63], sum = 0;
+    for (int i = 0; i < 63; ++i) { double x = i - m; double s = (x == 0.0) ? 0.5 : std::sin(kPi * x * 0.5) / (kPi * x); double w = 0.42 - 0.5 * std::cos(2.0 * kPi * i / 62) + 0.08 * std::cos(4.0 * kPi * i / 62); h[i] = s * w; if (i != m && ((i - m) % 2 == 0)) h[i] = 0; sum += h[i]; }
+    for (double& v : h) v *= 2.0 / sum;
+    std::mt19937 rng(3); std::uniform_real_distribution<double> u(-1, 1);
+    std::vector<double> in(2000), up(4000, 0.0), refUp(4000), gotUp(4000);
+    for (double& v : in) v = u(rng);
+    for (int n = 0; n < 2000; ++n) { up[2 * n] = in[n]; double a, b; os.up(in[n], a, b); gotUp[2 * n] = a; gotUp[2 * n + 1] = b; }
+    double dU = 0;
+    for (int k = 0; k < 4000; ++k) { double r = 0; for (int i = 0; i < 63; ++i) if (k - i >= 0) r += h[i] * up[k - i]; refUp[k] = r; dU = std::max(dU, std::fabs(r - gotUp[k])); }
+    CHECK(dU < 1e-12, "up-sampler differs from a plain convolution by %g", dU);
+    Oversampler2x os2; os2.reset(); double dD = 0;
+    for (int n = 0; n < 2000; ++n) {
+        double got = os2.down(gotUp[2 * n], gotUp[2 * n + 1]);
+        double r = 0; for (int i = 0; i < 63; ++i) if (2 * n - i >= 0) r += h[i] * gotUp[2 * n - i];
+        dD = std::max(dD, std::fabs(got - 0.5 * r));
+    }
+    CHECK(dD < 1e-12, "down-sampler differs from a plain convolution by %g", dD);
+}
+
+static void testEnvFollower() {
+    printf("-- envelope follower\n");
+    const double fs = 48000.0; EnvFollower e; e.setTimes(5.0, 100.0, fs);
+    double v = 0; int tA = -1; for (int i = 0; i < 48000 && tA < 0; ++i) { v = e.run(1.0); if (v >= 1.0 - std::exp(-1.0)) tA = i; }
+    CHECK(std::fabs(tA / fs * 1000.0 - 5.0) < 0.3, "attack time constant %g ms (expected 5)", tA / fs * 1000.0);
+    for (int i = 0; i < 48000; ++i) e.run(1.0);
+    CHECK(std::fabs(e.e - 1.0) < 1e-6, "does not settle at the input level: %g", e.e);
+    int tD = -1; for (int i = 0; i < 48000 * 2 && tD < 0; ++i) { v = e.run(0.0); if (v <= std::exp(-1.0)) tD = i; }
+    CHECK(std::fabs(tD / fs * 1000.0 - 100.0) < 2.0, "decay time constant %g ms (expected 100)", tD / fs * 1000.0);
+    EnvFollower f; f.setTimes(1.0, 50.0, fs); double mn = 1e9, mx = -1e9;
+    for (int i = 0; i < 48000; ++i) { double y = f.run(0.5 * std::sin(2 * kPi * 440.0 * i / fs)); if (i > 24000) { mn = std::min(mn, y); mx = std::max(mx, y); } }
+    CHECK(mn > 0.25 && mx < 0.5 + 1e-9, "follower on a 0.5 sine runs between %g and %g", mn, mx);
+    EnvFollower z; z.setTimes(1.0, 50.0, fs); bool neg = false; for (int i = 0; i < 1000; ++i) if (z.run(-0.7) < 0) neg = true;
+    CHECK(!neg, "follower went negative");
+}
+
 static void testSilenceAndReset() {
     printf("-- silence in, silence out; reset clears the state\n");
     Voice v; v.reset();
@@ -318,7 +364,7 @@ static void testSilenceAndReset() {
 }
 
 int main() {
-    testOversampler(); testGains(); testCutoffAndSlope(); testHighCutoffAndOverload(); testSampleRates(); testResonance(); testVca(); testStability(); testOutputSwitch(); testFm(); testRailKnee(); testSmoothTaper(); testSilenceAndReset();
+    testOversampler(); testGains(); testCutoffAndSlope(); testHighCutoffAndOverload(); testSampleRates(); testResonance(); testVca(); testStability(); testOutputSwitch(); testFm(); testRailKnee(); testSmoothTaper(); testSpeedUps(); testEnvFollower(); testSilenceAndReset();
     printf("\n%d checks, %d failed\n", checks, fails);
     return fails ? 1 : 0;
 }

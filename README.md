@@ -67,7 +67,7 @@ Not yet tried in Logic: the sidechain and Own input.
 
 ## Tests
 
-`tests/ripples_test.cpp` (1323 checks, no JUCE): oversampler gain and delay; gain and polarity of each output; BP2 has no DC; slopes of 12 and 24 dB per octave; −6 dB / −12 dB at the stage
+`tests/ripples_test.cpp` (1333 checks, no JUCE): oversampler gain and delay; gain and polarity of each output; BP2 has no DC; slopes of 12 and 24 dB per octave; −6 dB / −12 dB at the stage
 frequency for LP2 / LP4; the same answers at 44.1, 48 and 96 kHz; resonance (dies away below the threshold, keeps going above it, pitch follows Frequency within 5%, peak grows with Q, the output stays bounded);
 the VCA output scales with its control and blocks DC; no crash, NaN or runaway with random extreme settings at 44.1 / 96 / 192 kHz; rail clipping; output switching without a click; FM (+1 octave equals doubling the frequency, −1 halves it, an FM step lines up with the audio, audio-rate FM stays bounded); the rail bend (linear to 70%, continuous, symmetric, never past the rail); the smooth taper (zero at 0, threshold at 88%, rising, an even rise, no oscillation before 88%, oscillation after, the drawn setting unchanged); silence and reset.
 

@@ -58,46 +58,64 @@ inline double clipRail(double v) {
     return v < 0 ? -r : r;
 }
 
-// 2x oversampler: linear-phase half-band-style FIR (windowed sinc, cutoff fs/4 of the 2x rate)
+// Cheap stand-ins for tan and tanh (checked against the real ones in the tests).
+// fastTan: Pade [5/4], error below 3e-5 (relative) up to x = 1.0 and below 1% up to x = 1.26 (the filter never goes beyond that: its pole frequency is limited to 0.4 of the sample rate).
+inline double fastTan(double x) { const double x2 = x * x; return x * (945.0 - 105.0 * x2 + x2 * x2) / (945.0 - 420.0 * x2 + 15.0 * x2 * x2); }
+// fastTanh: Pade [7/6], absolute error below 1e-4 everywhere (worst at the cut-off where it switches to +-1).
+inline double fastTanh(double x) {
+    const double ax = std::fabs(x);
+    if (ax >= 4.97) return x < 0 ? -1.0 : 1.0;
+    const double x2 = x * x;
+    return x * (135135.0 + x2 * (17325.0 + x2 * (378.0 + x2))) / (135135.0 + x2 * (62370.0 + x2 * (3150.0 + 28.0 * x2)));
+}
+
+// 2x oversampler: linear-phase half-band FIR (windowed sinc, cutoff fs/4 of the 2x rate), written as two phases.
+// For a half-band filter every second tap is zero, so one phase is a single tap (a pure delay) and the other has 32 taps.
 class Oversampler2x {
 public:
     static constexpr int kTaps = 63;                 // odd, symmetric
+    static constexpr int kN = 32;                    // taps in the long phase
     Oversampler2x() {
         const int m = (kTaps - 1) / 2;
-        double sum = 0.0;
+        double h[kTaps], sum = 0.0;
         for (int i = 0; i < kTaps; ++i) {
             double x = i - m;
             double s = (x == 0.0) ? 0.5 : std::sin(kPi * x * 0.5) / (kPi * x);
             double w = 0.42 - 0.5 * std::cos(2.0 * kPi * i / (kTaps - 1)) + 0.08 * std::cos(4.0 * kPi * i / (kTaps - 1));
-            h[i] = s * w; sum += h[i];
+            h[i] = s * w;
+            if (i != m && ((i - m) % 2 == 0)) h[i] = 0.0;     // exactly zero in a half-band filter (rounding noise otherwise)
+            sum += h[i];
         }
         for (int i = 0; i < kTaps; ++i) h[i] *= 2.0 / sum;   // DC gain 2 on the zero-stuffed signal => unity after interpolation
+        for (int j = 0; j < kN; ++j) h0[j] = h[2 * j];        // even taps: all non-zero
+        hc = h[m]; cj = (m - 1) / 2;                            // odd taps: only the centre one is non-zero (index m = 2*cj+1)
         reset();
     }
-    void reset() { upBuf.assign(kTaps, 0.0); dnBuf.assign(kTaps, 0.0); upPos = dnPos = 0; }
-    static constexpr int latencySamples() { return kTaps - 1 == 62 ? 31 : (kTaps - 1) / 2; }   // host-rate samples: up (15.5) + down (15.5)
+    void reset() { for (double& v : xa) v = 0.0; for (double& v : xb) v = 0.0; for (double& v : xd) v = 0.0; pa = pb = pd = 0; }
+    static constexpr int latencySamples() { return 31; }   // host-rate samples: up (15.5) + down (15.5)
     // one host sample in -> two oversampled samples out
     void up(double x, double& o0, double& o1) {
-        push(upBuf, upPos, x);  o0 = conv(upBuf, upPos);
-        push(upBuf, upPos, 0.0); o1 = conv(upBuf, upPos);
+        pa = (pa + 1) & (kN - 1); xa[pa] = xa[pa + kN] = x;
+        const double* r = &xa[pa + kN];      // r[-j] = x[n-j]
+        double a = 0.0;
+        for (int j = 0; j < kN; ++j) a += h0[j] * r[-j];
+        o0 = a;
+        o1 = hc * r[-cj];
     }
-    // two oversampled samples in -> one host sample out
+    // two oversampled samples in -> one host sample out (the output that lines up with the first of each pair)
     double down(double a, double b) {
-        push(dnBuf, dnPos, a);
-        const double r = 0.5 * conv(dnBuf, dnPos);   // decimate: keep the output that lines up with the first of each pair
-        push(dnBuf, dnPos, b);
-        return r;
+        pb = (pb + 1) & (kN - 1); xb[pb] = xb[pb + kN] = a;
+        const double* ra = &xb[pb + kN];
+        double s = 0.0;
+        for (int j = 0; j < kN; ++j) s += h0[j] * ra[-j];
+        s += hc * xd[(pd - cj + kN) & (kN - 1)];     // b[n-1-cj]: the history of b before the current one
+        pd = (pd + 1) & (kN - 1); xd[pd] = b;
+        return 0.5 * s;
     }
 private:
-    double h[kTaps];
-    std::vector<double> upBuf, dnBuf;
-    int upPos = 0, dnPos = 0;
-    void push(std::vector<double>& b, int& p, double x) { p = (p + 1) % kTaps; b[p] = x; }
-    double conv(const std::vector<double>& b, int p) const {
-        double a = 0.0;
-        for (int i = 0; i < kTaps; ++i) a += h[i] * b[(p - i + kTaps) % kTaps];
-        return a;
-    }
+    double h0[kN], hc = 0.0; int cj = 0;
+    double xa[2 * kN], xb[2 * kN], xd[kN];
+    int pa = 0, pb = 0, pd = 0;
 };
 
 // One channel of the filter, running at the (oversampled) rate it is given.
@@ -107,52 +125,63 @@ public:
     // volts in; returns the selected output in volts. stageHz = pole frequency of each stage (<= kStageMaxHz),
     // iReso / iVca = OTA bias currents (amps), fs = rate this runs at.
     double process(double inV, Output out, double stageHz, double iReso, double iVca, double fs) {
-        double o[4]; processAll(inV, stageHz, iReso, iVca, fs, o); return o[out];
+        double o[4]; processAll(inV, stageHz, iReso, iVca, fs, o, 1u << out); return o[out];
     }
-    // the same, but returns all four outputs (volts) so a caller can switch or fade between them
-    void processAll(double inV, double stageHz, double iReso, double iVca, double fs, double* o) {
-        const double wcT = std::min(stageHz, 0.45 * fs);
-        const double g = std::tan(kPi * wcT / fs);
+    // the same, but returns the outputs asked for in 'mask' (bit n = output n; the others are left alone), so a caller can switch or fade between them
+    void processAll(double inV, double stageHz, double iReso, double iVca, double fs, double* o, unsigned mask = 0xF) {
+        if (fs != lastFs) { lastFs = fs; aIn = 1.0 - std::exp(-2.0 * kPi * 2.4 / fs); aV = 1.0 - std::exp(-2.0 * kPi * 0.34 / fs); }
+        const double wcT = std::min(stageHz, 0.4 * fs);
+        const double g = fastTan(kPi * wcT / fs);
         const double G = g / (1.0 + g);
         // 2.4 Hz input high-pass (C11 220n with R15 300k, ahead of the OTA's + input) and 0.34 Hz (C16 4.7u, R20 100k)
-        const double aIn = 1.0 - std::exp(-2.0 * kPi * 2.4 / fs);
         hpIn += aIn * (inV - hpIn);
         const double vplus = (inV - hpIn) * kInDiv;
         // linear part of each stage:  y_k = c_k - G * w_k  with  c_k = s_k * (1 - G)
         const double a1 = (kR_stage / kR_in) * inV;
-        double c[4], p[4], q[4];
-        for (int k = 0; k < 4; ++k) c[k] = s[k] * (1.0 - G);
-        p[0] = c[0] - G * a1;           q[0] = -G * kR_stage;
-        for (int k = 1; k < 4; ++k) { p[k] = c[k] - G * p[k - 1]; q[k] = -G * q[k - 1]; }
-        // solve  I = Iabc * tanh((vplus - (p3 + q3*I) * kFbDiv) / (2Vt))  for I (monotone: Newton)
+        const double G1 = 1.0 - G;
+        double p[4], q[4];
+        p[0] = s[0] * G1 - G * a1;      q[0] = -G * kR_stage;
+        for (int k = 1; k < 4; ++k) { p[k] = s[k] * G1 - G * p[k - 1]; q[k] = -G * q[k - 1]; }
+        // solve  I = Iabc * tanh((vplus - (p3 + q3*I) * kFbDiv) / (2Vt))  for I (monotone: Newton, started from the last answer)
         double I = iOta;
-        for (int it = 0; it < 8; ++it) {
-            const double vd = vplus - (p[3] + q[3] * I) * kFbDiv;
-            const double th = std::tanh(vd / kVt2);
+        const double dvdI = q[3] * kFbDiv / kVt2;
+        const double v0 = (vplus - p[3] * kFbDiv) / kVt2;
+        for (int it = 0; it < 6; ++it) {
+            const double th = fastTanh(v0 - dvdI * I);
             const double F  = I - iReso * th;
-            const double dF = 1.0 + iReso * (1.0 - th * th) * (q[3] * kFbDiv / kVt2);
+            const double dF = 1.0 + iReso * (1.0 - th * th) * dvdI;
             const double step = F / dF;
             I -= step;
-            if (std::fabs(step) < 1e-12) break;
+            if (std::fabs(step) < 1e-10) break;
         }
         iOta = I;
         double y[4];
         for (int k = 0; k < 4; ++k) {
-            y[k] = p[k] + q[k] * I;
-            y[k] = clipRail(y[k]);               // the op-amps stop at the supply rails
-            s[k] = 2.0 * y[k] - s[k];            // trapezoidal state update
+            y[k] = clipRail(p[k] + q[k] * I);        // the op-amps stop at the supply rails
+            s[k] = 2.0 * y[k] - s[k];                // trapezoidal state update
         }
-        o[LP2] = clipRail(-(100e3 / 39e3) * y[1]);
-        o[LP4] = clipRail(-(100e3 / 33e3) * y[3]);
-        o[BP2] = clipRail(-(100e3 / 39e3) * (y[0] + y[1]));
-        const double aV = 1.0 - std::exp(-2.0 * kPi * 0.34 / fs);
+        if (mask & (1u << LP2)) o[LP2] = clipRail(-(100e3 / 39e3) * y[1]);
+        if (mask & (1u << LP4)) o[LP4] = clipRail(-(100e3 / 33e3) * y[3]);
+        if (mask & (1u << BP2)) o[BP2] = clipRail(-(100e3 / 39e3) * (y[0] + y[1]));
         hpVca += aV * (y[3] - hpVca);
-        const double v = (y[3] - hpVca) * kVcaDiv;
-        o[LP4_VCA] = clipRail(-100e3 * iVca * std::tanh(v / kVt2));
+        if (mask & (1u << LP4_VCA)) o[LP4_VCA] = clipRail(-100e3 * iVca * fastTanh((y[3] - hpVca) * kVcaDiv / kVt2));
     }
 private:
     double s[4] = {0, 0, 0, 0};
     double hpIn = 0, hpVca = 0, iOta = 0;
+    double lastFs = 0, aIn = 0, aV = 0;
+};
+
+// Envelope follower for the FM "Envelope" source: rises towards the rectified input with the attack time, falls with the decay time.
+// Output is in the same units as the input (1.0 = full scale), never negative.
+struct EnvFollower {
+    double e = 0.0, aA = 0.0, aD = 0.0;
+    void reset() { e = 0.0; }
+    void setTimes(double attackMs, double decayMs, double fs) {
+        aA = 1.0 - std::exp(-1.0 / (std::max(0.01, attackMs) * 0.001 * fs));
+        aD = 1.0 - std::exp(-1.0 / (std::max(0.1, decayMs) * 0.001 * fs));
+    }
+    double run(double x) { x = std::fabs(x); e += (x > e ? aA : aD) * (x - e); return e; }
 };
 
 // What the plug-in uses: one channel at 2x oversampling, with the plug-in's units (Hz, 0..1 knobs, dB) and 1.0 = kVoltsPerFS volts.
@@ -181,11 +210,12 @@ public:
         const double qq = std::max(0.0, std::min(1.0, q));
         const double iq = smoothTaper ? smoothLoopGain(qq) * kIThreshold : qq * kIQmax;
         const double iv = std::max(0.0, std::min(1.0, vca)) * kIVcaMax;
-        const double hzA = std::max(1.0, std::min(stageHz * std::exp2(fmA), kStageMaxHz));
-        const double hzB = std::max(1.0, std::min(stageHz * std::exp2(fmB), kStageMaxHz));
+        const double hzA = std::max(1.0, std::min(fmA == 0.0 ? stageHz : stageHz * std::exp2(fmA), kStageMaxHz));
+        const double hzB = std::max(1.0, std::min(fmB == 0.0 ? stageHz : stageHz * std::exp2(fmB), kStageMaxHz));
         double oa[4], ob[4];
-        ch0.processAll(a, hzA, iq, iv, fs2, oa);
-        ch0.processAll(b, hzB, iq, iv, fs2, ob);
+        const unsigned mask = (1u << curOut) | (xf < 1.0 ? (1u << prevOut) : 0u);
+        ch0.processAll(a, hzA, iq, iv, fs2, oa, mask);
+        ch0.processAll(b, hzB, iq, iv, fs2, ob, mask);
         double ya, yb;
         if (xf >= 1.0) { ya = oa[curOut]; yb = ob[curOut]; }
         else { ya = xf * oa[curOut] + (1.0 - xf) * oa[prevOut]; yb = xf * ob[curOut] + (1.0 - xf) * ob[prevOut]; xf = std::min(1.0, xf + 1.0 / (0.010 * hostFs)); }
