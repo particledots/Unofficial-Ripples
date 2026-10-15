@@ -40,7 +40,8 @@ endorsed by the module's makers.
 | Resonance | 0–1; the pitch of the self-oscillation is the Frequency setting. Where it starts depends on **Resonance taper** |
 | Resonance taper | **Smooth** (default): the peak rises evenly across the knob and self-oscillation starts near 88%. **As drawn**: linear, follows the schematic, self-oscillation at 75% with most of the resonance packed into the last few percent |
 | Output | LP2, LP4, BP2, LP4 through VCA (a switch fades over 10 ms) |
-| FM amount | 0–1, how far the **sidechain** signal moves the frequency (see below) |
+| FM amount | −100% to +100%: how far the FM signal moves the frequency; negative pushes it down (see below) |
+| FM attack / decay | 0.1–100 ms / 5 ms–3 s: only used by the Envelope FM source |
 | VCA level | 0–1, only for the "LP4 through VCA" output |
 | Input gain, Output gain | ±24 dB |
 
@@ -58,16 +59,17 @@ The original has no FM jack. It has a CV input with a level knob that moves the 
 
 * **Sidechain:** another track goes into the plug-in's sidechain input (in Logic: the **Side Chain** menu in the plug-in window's header bar, next to the View menu).
 * **Own input:** the sound going into the filter also modulates its frequency (audio-rate self-FM). This needs no routing, so use it first to hear what FM does.
+* **Envelope:** the *level* of the sidechain signal (or of the plug-in's own input, if no sidechain is connected) is followed with **FM ATTACK** and **FM DECAY**, and that moves the frequency. This is the "ping it with an envelope" use: send a drum track to the sidechain and the filter opens on each hit and falls back. It is a guess at how an envelope would drive the hardware's CV input; it was not modelled from a drawing.
 
 The signal moves the frequency of all four stages exponentially, in octaves (like the hardware's 1 V/oct summing). FM AMOUNT 100% = 5 octaves for a full-scale signal. Positive = higher. A stereo sidechain is averaged to mono.
 The FM signal is delayed to line up with the audio it belongs to. **Guesses:** the scale and the plain linear sum in octaves; the hardware's CV attenuator and exponential converter were not modelled in detail.
 **Logic remembers what a plug-in offered the first time it saw it.** Build 4 (0.4.0) still showed no Side Chain menu in Logic after a rescan, while Blades (first install) did, so from build 5 (0.5.0) the plug-in has a new internal ID (`URpa`) and Logic sees it as a new plug-in. Delete the older Unofficial Ripples (`.component` in ~/Library/Audio/Plug-Ins/Components and `.vst3` in ~/Library/Audio/Plug-Ins/VST3) before installing it, and re-add the plug-in to any project that used the old one.
 Each build that changes the plug-in's inputs raises the version too. Each build that changes the plug-in's inputs raises the version (this one is 0.5.0). If the Side Chain menu is missing: Logic Pro > Settings > Plug-in Manager, select Unofficial Ripples, click **Reset & Rescan Selection**.
-Not yet tried in Logic: the sidechain and Own input.
+A test of the whole plug-in (`tools/proc_test.cpp`, run in the build) feeds a sidechain and checks that Sidechain, Own input and Envelope each change the sound, that a silent or missing sidechain changes nothing, and that a negative amount closes the filter. Not yet tried in Logic: the sidechain and Own input (Bryn reported the sidechain FM did nothing in build 5; this build adds the check above), and the Envelope source.
 
 ## Tests
 
-`tests/ripples_test.cpp` (1333 checks, no JUCE): oversampler gain and delay; gain and polarity of each output; BP2 has no DC; slopes of 12 and 24 dB per octave; −6 dB / −12 dB at the stage
+`tests/ripples_test.cpp` (1333 checks (plus the envelope follower and the speed-up checks), no JUCE): oversampler gain and delay; gain and polarity of each output; BP2 has no DC; slopes of 12 and 24 dB per octave; −6 dB / −12 dB at the stage
 frequency for LP2 / LP4; the same answers at 44.1, 48 and 96 kHz; resonance (dies away below the threshold, keeps going above it, pitch follows Frequency within 5%, peak grows with Q, the output stays bounded);
 the VCA output scales with its control and blocks DC; no crash, NaN or runaway with random extreme settings at 44.1 / 96 / 192 kHz; rail clipping; output switching without a click; FM (+1 octave equals doubling the frequency, −1 halves it, an FM step lines up with the audio, audio-rate FM stays bounded); the rail bend (linear to 70%, continuous, symmetric, never past the rail); the smooth taper (zero at 0, threshold at 88%, rising, an even rise, no oscillation before 88%, oscillation after, the drawn setting unchanged); silence and reset.
 

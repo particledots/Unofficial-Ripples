@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(UnofficialRipplesPlugin VERSION 0.5.0)   # raise this with every build that changes the plug-in's inputs/outputs, so Logic re-reads it
+project(UnofficialRipplesPlugin VERSION 0.6.0)   # raise this with every build that changes the plug-in's inputs/outputs, so Logic re-reads it
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -51,3 +51,11 @@ target_sources(ripples_snapshot PRIVATE tools/snapshot.cpp src/PluginProcessor.c
 target_include_directories(ripples_snapshot PRIVATE src)
 target_compile_definitions(ripples_snapshot PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=0)
 target_link_libraries(ripples_snapshot PRIVATE juce::juce_audio_utils juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+
+# --- Whole-plug-in check (sidechain FM reaches the filter):  cmake --build build --target ripples_proc_test ---
+juce_add_console_app(ripples_proc_test PRODUCT_NAME "ripples_proc_test")
+set_target_properties(ripples_proc_test PROPERTIES EXCLUDE_FROM_ALL TRUE)
+target_sources(ripples_proc_test PRIVATE tools/proc_test.cpp src/PluginProcessor.cpp src/PluginEditor.cpp)
+target_include_directories(ripples_proc_test PRIVATE src)
+target_compile_definitions(ripples_proc_test PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=0)
+target_link_libraries(ripples_proc_test PRIVATE juce::juce_audio_utils juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)

@@ -23,6 +23,11 @@ jobs:
           cmake --build build --target ripples_test -j4
           ./build/ripples_test
 
+      - name: Whole plug-in check (the sidechain really drives the FM, for Sidechain, Own input and Envelope)
+        run: |
+          cmake --build build --target ripples_proc_test -j4
+          ./build/ripples_proc_test_artefacts/Release/ripples_proc_test
+
       - name: Picture of the panel (does not stop the build if it fails)
         continue-on-error: true
         run: |

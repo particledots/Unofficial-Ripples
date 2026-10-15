@@ -18,8 +18,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout UnofficialRipplesProcessor::
     p.push_back(std::make_unique<AudioParameterChoice>(ParameterID{ "output", 1 }, "Output",
         StringArray{ "LP2 (12 dB low-pass)", "LP4 (24 dB low-pass)", "BP2 (band-pass)", "LP4 through VCA" }, 1));
     // FM: the sidechain signal moves the Frequency exponentially. 1.0 = one octave per volt (full scale = 5 V), so a full-scale signal at 1.0 swings 5 octaves each way.
-    p.push_back(std::make_unique<AudioParameterFloat>(ParameterID{ "fm", 1 }, "FM amount", NormalisableRange<float>(0.0f, 1.0f, 0.0f, 0.5f), 0.0f));
-    p.push_back(std::make_unique<AudioParameterChoice>(ParameterID{ "fmsrc", 1 }, "FM source", StringArray{ "Sidechain", "Own input" }, 0));
+    p.push_back(std::make_unique<AudioParameterFloat>(ParameterID{ "fm", 1 }, "FM amount", NormalisableRange<float>(-1.0f, 1.0f), 0.0f));
+    // Sidechain = the sidechain signal itself; Own input = this plug-in's input; Envelope = the level of the sidechain (or of the own input when no sidechain is connected), shaped by attack/decay
+    p.push_back(std::make_unique<AudioParameterChoice>(ParameterID{ "fmsrc", 1 }, "FM source", StringArray{ "Sidechain", "Own input", "Envelope" }, 0));
+    p.push_back(std::make_unique<AudioParameterFloat>(ParameterID{ "fmatk", 1 }, "FM envelope attack", NormalisableRange<float>(0.1f, 100.0f, 0.0f, 0.4f), 1.0f,
+        AudioParameterFloatAttributes().withLabel("ms")));
+    p.push_back(std::make_unique<AudioParameterFloat>(ParameterID{ "fmdec", 1 }, "FM envelope decay", NormalisableRange<float>(5.0f, 3000.0f, 0.0f, 0.4f), 150.0f,
+        AudioParameterFloatAttributes().withLabel("ms")));
     // Resonance taper: Smooth (default, a departure from the drawing: peak rises evenly, self-oscillation near 88%) or As drawn (linear, self-oscillation at 75%)
     p.push_back(std::make_unique<AudioParameterChoice>(ParameterID{ "taper", 1 }, "Resonance taper", StringArray{ "Smooth", "As drawn" }, 0));
     p.push_back(std::make_unique<AudioParameterFloat>(ParameterID{ "vca", 1 }, "VCA level", NormalisableRange<float>(0.0f, 1.0f), 0.3f));
@@ -33,6 +38,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout UnofficialRipplesProcessor::
 void UnofficialRipplesProcessor::prepareToPlay(double sampleRate, int) {
     fs = sampleRate;
     for (auto& v : voices) v.reset();
+    env.reset();
     first = true;
     setLatencySamples(ripples::Oversampler2x::latencySamples());
 }
@@ -63,7 +69,8 @@ void UnofficialRipplesProcessor::processBlock(juce::AudioBuffer<float>& buf, juc
     const double fmAmt = (double) *apvts.getRawParameterValue("fm");
     const bool smooth = *apvts.getRawParameterValue("taper") < 0.5f;
     for (auto& v : voices) v.smoothTaper = smooth;
-    const bool fmOwn = *apvts.getRawParameterValue("fmsrc") > 0.5f;     // true: the plug-in's own input is the FM signal
+    const int fmSrc = juce::jlimit(0, 2, (int) std::lround(*apvts.getRawParameterValue("fmsrc")));   // 0 sidechain, 1 own input, 2 envelope
+    env.setTimes((double) *apvts.getRawParameterValue("fmatk"), (double) *apvts.getRawParameterValue("fmdec"), fs);
     const auto out = (ripples::Output) juce::jlimit(0, 3, (int) std::lround(*apvts.getRawParameterValue("output")));
     const double inG = std::pow(10.0, *apvts.getRawParameterValue("ingain") / 20.0);
     const double outG = std::pow(10.0, *apvts.getRawParameterValue("outgain") / 20.0);
@@ -72,15 +79,22 @@ void UnofficialRipplesProcessor::processBlock(juce::AudioBuffer<float>& buf, juc
     const double a = 1.0 - std::exp(-1.0 / (0.005 * fs));
     const double tl = std::log(std::max(1.0, targetHz));
     float* d[2] = { mainBuf.getWritePointer(0), chans > 1 ? mainBuf.getWritePointer(1) : nullptr };
-    const double fmScale = fmAmt * 5.0;     // octaves per unit of FM signal: 100% = 5 octaves for a full-scale signal (1 V/oct with full scale = 5 V)
+    const double fmScale = fmAmt * 5.0;     // octaves per unit of FM signal: 100% = 5 octaves for a full-scale signal (1 V/oct with full scale = 5 V); negative amounts flip it
     for (int i = 0; i < n; ++i) {
         smHzLog += a * (tl - smHzLog); smQ += a * (targetQ - smQ); smVca += a * (targetVca - smVca);
         const double hz = std::exp(smHzLog);
         double fmSide = 0.0;
         if (scChans == 1) fmSide = sc[0][i]; else if (scChans == 2) fmSide = 0.5 * (sc[0][i] + sc[1][i]);
+        double envLevel = 0.0;
+        if (fmSrc == 2) {
+            // follow the sidechain if one is connected, otherwise the plug-in's own input
+            double src = fmSide;
+            if (scChans == 0) src = chans > 1 ? 0.5 * ((double) d[0][i] + (double) d[1][i]) : (double) d[0][i];
+            envLevel = env.run(src);
+        }
         for (int c = 0; c < chans; ++c) {
             const float x = d[c][i];
-            const double fm = (fmOwn ? (double) x : fmSide) * fmScale;
+            const double fm = (fmSrc == 1 ? (double) x : fmSrc == 2 ? envLevel : fmSide) * fmScale;
             d[c][i] = voices[c].process(x, out, hz, smQ, smVca, inG, outG, fs, fm);
         }
     }

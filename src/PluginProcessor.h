@@ -34,6 +34,7 @@ public:
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     ripples::Voice voices[2];
+    ripples::EnvFollower env;
     double smQ = 0.0, smVca = 0.3;   // smoothed values (frequency is smoothed on a log scale)
     double smHzLog = std::log(1000.0);
     double fs = 44100.0;

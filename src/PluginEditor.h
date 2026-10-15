@@ -33,9 +33,9 @@ private:
 
     UnofficialRipplesProcessor& proc;
     RipplesLook look;
-    Knob freq, reso, fm, vca, inGain, outGain;
+    Knob freq, reso, fm, vca, inGain, outGain, fmAtk, fmDec;
     juce::TextButton outButtons[4];
-    juce::TextButton fmButtons[2];
+    juce::TextButton fmButtons[3];
     std::unique_ptr<juce::ParameterAttachment> fmAttach;
     juce::Label fmLabel;
     juce::TextButton taperButtons[2];

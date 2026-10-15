@@ -56,6 +56,10 @@ RipplesEditor::RipplesEditor(UnofficialRipplesProcessor& p) : AudioProcessorEdit
     addKnob(vca, "vca", "VCA LEVEL");
     addKnob(inGain, "ingain", "INPUT", true);
     addKnob(outGain, "outgain", "OUTPUT", true);
+    addKnob(fmAtk, "fmatk", "FM ATTACK", true);
+    addKnob(fmDec, "fmdec", "FM DECAY", true);
+    for (Knob* k : { &fmAtk, &fmDec }) k->slider.textFromValueFunction = [](double v) { return v < 10.0 ? juce::String(v, 1) + " ms" : v < 1000.0 ? juce::String((int) std::lround(v)) + " ms" : juce::String(v / 1000.0, 2) + " s"; };
+    fmAtk.slider.updateText(); fmDec.slider.updateText();
 
     freq.slider.textFromValueFunction = [](double v) { return v < 1000.0 ? juce::String(v, v < 100.0 ? 1 : 0) + " Hz" : juce::String(v / 1000.0, 2) + " kHz"; };
     freq.slider.valueFromTextFunction = [](const juce::String& s) {
@@ -82,13 +86,13 @@ RipplesEditor::RipplesEditor(UnofficialRipplesProcessor& p) : AudioProcessorEdit
     outAttach->sendInitialUpdate();
 
     {
-        static const char* fmNames[2] = { "SIDECHAIN", "OWN INPUT" };
+        static const char* fmNames[3] = { "SIDECHAIN", "OWN INPUT", "ENVELOPE" };
         auto* fmParam = dynamic_cast<juce::RangedAudioParameter*>(proc.apvts.getParameter("fmsrc"));
         fmAttach = std::make_unique<juce::ParameterAttachment>(*fmParam, [this](float v) {
             const int sel = (int) std::lround(v);
-            for (int i = 0; i < 2; ++i) fmButtons[i].setToggleState(i == sel, juce::dontSendNotification);
+            for (int i = 0; i < 3; ++i) fmButtons[i].setToggleState(i == sel, juce::dontSendNotification);
         });
-        for (int i = 0; i < 2; ++i) {
+        for (int i = 0; i < 3; ++i) {
             fmButtons[i].setButtonText(fmNames[i]);
             fmButtons[i].onClick = [this, i] { fmAttach->setValueAsCompleteGesture((float) i); };
             addAndMakeVisible(fmButtons[i]);
@@ -117,12 +121,12 @@ RipplesEditor::RipplesEditor(UnofficialRipplesProcessor& p) : AudioProcessorEdit
         taperLabel.setColour(juce::Label::textColourId, RipplesLook::dim());
         addAndMakeVisible(taperLabel);
     }
-    hint.setText("FM: SIDECHAIN = another track routed into this plug-in's sidechain; OWN INPUT = the input also modulates the frequency.  TAPER: SMOOTH raises the resonance evenly and self-oscillates near 88%; AS DRAWN follows the schematic (self-oscillates at 75%).  VCA LEVEL only affects the LP4 > VCA output.",
+    hint.setText("FM: SIDECHAIN = the sidechain signal moves the frequency; OWN INPUT = the input does; ENVELOPE = the level of the sidechain (or of the input, if no sidechain) moves it, shaped by FM ATTACK and DECAY.  A negative FM AMOUNT pushes the frequency down instead of up.  TAPER: SMOOTH raises the resonance evenly and self-oscillates near 88%; AS DRAWN follows the schematic (self-oscillates at 75%).  VCA LEVEL only affects the LP4 > VCA output.",
                  juce::dontSendNotification);
     hint.setFont(juce::FontOptions(11.0f)); hint.setColour(juce::Label::textColourId, RipplesLook::dim());
     hint.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(hint);
-    setSize(600, 430);
+    setSize(780, 430);
 }
 
 RipplesEditor::~RipplesEditor() { setLookAndFeel(nullptr); }
@@ -166,12 +170,18 @@ void RipplesEditor::resized() {
     {
         const int x0 = 28 + 2 * sw + 24, w = getWidth() - x0 - 28;
         fmLabel.setBounds(x0, 276, w, 14);
-        fmButtons[0].setBounds(x0, 292, 118, 26);
-        fmButtons[1].setBounds(x0 + 126, 292, 118, 26);
+        for (int i = 0; i < 3; ++i) fmButtons[i].setBounds(x0 + i * 88, 292, 82, 26);
+        fmLabel.setBounds(x0, 276, 260, 14);
+        for (int i = 0; i < 2; ++i) {
+            Knob* k = i == 0 ? &fmAtk : &fmDec;
+            auto cell = juce::Rectangle<int>(x0 + 272 + i * 84, 274, 84, 100);
+            k->label.setBounds(cell.removeFromTop(16));
+            k->slider.setBounds(cell);
+        }
         taperLabel.setBounds(x0, 326, w, 14);
-        taperButtons[0].setBounds(x0, 342, 118, 26);
-        taperButtons[1].setBounds(x0 + 126, 342, 118, 26);
-        hint.setBounds(28, 378, getWidth() - 56, 40);
+        taperButtons[0].setBounds(x0, 342, 125, 26);
+        taperButtons[1].setBounds(x0 + 135, 342, 125, 26);
+        hint.setBounds(28, 380, getWidth() - 56, 40);
     }
     hint.setJustificationType(juce::Justification::topLeft);
     hint.setMinimumHorizontalScale(1.0f);
