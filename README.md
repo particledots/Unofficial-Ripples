@@ -61,7 +61,8 @@ The original has no FM jack. It has a CV input with a level knob that moves the 
 
 The signal moves the frequency of all four stages exponentially, in octaves (like the hardware's 1 V/oct summing). FM AMOUNT 100% = 5 octaves for a full-scale signal. Positive = higher. A stereo sidechain is averaged to mono.
 The FM signal is delayed to line up with the audio it belongs to. **Guesses:** the scale and the plain linear sum in octaves; the hardware's CV attenuator and exponential converter were not modelled in detail.
-**Logic caches what a plug-in offers, by version number.** Each build that changes the plug-in's inputs raises the version (this one is 0.4.0). If the Side Chain menu is missing: Logic Pro > Settings > Plug-in Manager, select Unofficial Ripples, click **Reset & Rescan Selection**.
+**Logic remembers what a plug-in offered the first time it saw it.** Build 4 (0.4.0) still showed no Side Chain menu in Logic after a rescan, while Blades (first install) did, so from build 5 (0.5.0) the plug-in has a new internal ID (`URpa`) and Logic sees it as a new plug-in. Delete the older Unofficial Ripples (`.component` in ~/Library/Audio/Plug-Ins/Components and `.vst3` in ~/Library/Audio/Plug-Ins/VST3) before installing it, and re-add the plug-in to any project that used the old one.
+Each build that changes the plug-in's inputs raises the version too. Each build that changes the plug-in's inputs raises the version (this one is 0.5.0). If the Side Chain menu is missing: Logic Pro > Settings > Plug-in Manager, select Unofficial Ripples, click **Reset & Rescan Selection**.
 Not yet tried in Logic: the sidechain and Own input.
 
 ## Tests

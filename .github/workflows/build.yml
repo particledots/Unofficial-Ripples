@@ -60,6 +60,8 @@ jobs:
           1. Unzip.
           2. Open Terminal and run:   xattr -dr com.apple.quarantine ~/Downloads/Unofficial-Ripples-macOS/*
              (adjust the path if you unzipped elsewhere; this clears the "downloaded from internet" block)
+          2b. If you have an older Unofficial Ripples, delete it first (the .component in ~/Library/Audio/Plug-Ins/Components and the .vst3 in ~/Library/Audio/Plug-Ins/VST3).
+             This build has a new internal ID so that Logic reads its Side Chain input as a new plug-in; old projects need the plug-in added again.
           3. Copy "Unofficial Ripples.component" to  ~/Library/Audio/Plug-Ins/Components/
              Copy "Unofficial Ripples.vst3"       to  ~/Library/Audio/Plug-Ins/VST3/
           4. In Logic: Settings > Plug-in Manager > rescan. Look for "particledots: Unofficial Ripples"
